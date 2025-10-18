@@ -1,27 +1,57 @@
 {
-  "name": "app",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "next": "15.5.4"
-  },
-  "devDependencies": {
-    "typescript": "^5",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4",
-    "eslint": "^9",
-    "eslint-config-next": "15.5.4",
-    "@eslint/eslintrc": "^3"
-  }
+    "name":  "bethboom",
+    "version":  "0.1.0",
+    "private":  true,
+    "scripts":  {
+                    "dev":  "next dev",
+                    "build":  "next build",
+                    "start":  "next start",
+                    "lint":  "eslint --max-warnings=0 .",
+                    "typecheck":  "tsc --noEmit",
+                    "db:generate":  "prisma generate",
+                    "db:migrate":  "prisma migrate deploy",
+                    "db:seed":  "tsx prisma/seed.ts",
+                    "prepare":  "prisma generate",
+                    "test":  "vitest run",
+                    "test:watch":  "vitest",
+                    "test:e2e":  "playwright test",
+                    "test:e2e:headed":  "playwright test --headed"
+                },
+    "dependencies":  {
+                         "@prisma/client":  "^6.16.2",
+                         "@radix-ui/react-slot":  "^1.2.3",
+                         "bcryptjs":  "^3.0.2",
+                         "class-variance-authority":  "^0.7.1",
+                         "clsx":  "^2.1.1",
+                         "jsonwebtoken":  "^9.0.2",
+                         "lucide-react":  "^0.544.0",
+                         "next":  "14.2.17",
+                         "react":  "18.3.1",
+                         "react-dom":  "18.3.1",
+                         "tailwind-merge":  "^3.3.1",
+                         "zod":  "^4.1.11"
+                     },
+    "devDependencies":  {
+                            "@eslint/eslintrc":  "^3.3.1",
+                            "@playwright/test":  "^1.55.1",
+                            "@types/jsonwebtoken":  "^9.0.10",
+                            "@types/node":  "20.14.10",
+                            "@types/react":  "18.3.10",
+                            "@types/react-dom":  "18.3.5",
+                            "autoprefixer":  "10.4.19",
+                            "eslint":  "8.57.1",
+                            "eslint-config-next":  "14.2.17",
+                            "postcss":  "8.4.38",
+                            "prettier":  "3.3.3",
+                            "prisma":  "^6.16.2",
+                            "tailwindcss":  "3.4.13",
+                            "tailwindcss-animate":  "^1.0.7",
+                            "tsx":  "^4.20.6",
+                            "typescript":  "5.5.4",
+                            "vitest":  "^3.2.4"
+                        },
+    "engines":  {
+                    "node":  "\u003e=18.18"
+                },
+    "packageManager":  "pnpm@10.17.1"
 }

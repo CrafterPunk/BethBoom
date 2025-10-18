@@ -1,0 +1,294 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN_GENERAL
+  TRABAJADOR
+  AUDITOR_GENERAL
+  AUDITOR_FRANQUICIA
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum MercadoTipo {
+  POOL
+  ODDS
+}
+
+enum MercadoEstado {
+  ABIERTO
+  SUSPENDIDO
+  CERRADO
+}
+
+enum MercadoScope {
+  GLOBAL
+  SEDE
+}
+
+enum TicketEstado {
+  ACTIVO
+  ANULADO
+  PAGADO
+}
+
+enum CajaMovimientoTipo {
+  APERTURA
+  INGRESO
+  EGRESO
+  AJUSTE
+  CIERRE
+}
+
+enum CajaSesionEstado {
+  ABIERTA
+  SOLICITADA
+  CERRADA
+}
+
+model Franquicia {
+  id                       String           @id @default(uuid())
+  nombre                   String
+  codigo                   String           @unique
+  descripcion              String?
+  franchiseSharePctDefault Decimal          @db.Decimal(5, 2)
+  activa                   Boolean          @default(true)
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+  usuarios                 User[]           @relation("UserFranquicia")
+  auditores                User[]           @relation("AuditorFranquicia")
+  mercados                 Mercado[]        @relation("FranquiciaMercados")
+  tickets                  Ticket[]
+  pagos                    Pago[]
+  cajaMovimientos          CajaMovimiento[]
+  cajaSesiones             CajaSesion[]
+}
+
+model User {
+  id                     String           @id @default(uuid())
+  displayName            String
+  role                   UserRole
+  estado                 UserStatus       @default(ACTIVE)
+  accessCodeHash         String
+  franquiciaId           String?
+  franquicia             Franquicia?      @relation("UserFranquicia", fields: [franquiciaId], references: [id])
+  auditorFranquiciaId    String?
+  auditorFranquicia      Franquicia?      @relation("AuditorFranquicia", fields: [auditorFranquiciaId], references: [id])
+  lastLoginAt            DateTime?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  tickets                Ticket[]         @relation("TicketTrabajador")
+  anulacionesRegistradas Ticket[]         @relation("TicketAnulador")
+  pagos                  Pago[]           @relation("PagoPagador")
+  oddUpdates             OddUpdate[]
+  auditLogs              AuditLog[]
+  cajaMovimientos        CajaMovimiento[] @relation("CajaMovTrabajador")
+  cajasAprobadas         CajaMovimiento[] @relation("CajaMovAprobador")
+  cajaSesiones           CajaSesion[]
+  cajaSesionesAprobadas  CajaSesion[]     @relation("CajaSesionAprobador")
+  Mercado                Mercado[]
+}
+
+model Mercado {
+  id                String        @id @default(uuid())
+  nombre            String
+  descripcion       String
+  tipo              MercadoTipo
+  estado            MercadoEstado @default(ABIERTO)
+  feePct            Decimal       @default(12.00) @db.Decimal(5, 2)
+  franchiseSharePct Decimal       @default(50.00) @db.Decimal(5, 2)
+  umbralRecalcMonto Int           @default(30000)
+  franquiciaScope   MercadoScope  @default(GLOBAL)
+  sedeId            String?
+  sede              Franquicia?   @relation("FranquiciaMercados", fields: [sedeId], references: [id])
+  startsAt          DateTime?
+  endsAt            DateTime?
+  createdById       String?
+  createdBy         User?         @relation(fields: [createdById], references: [id])
+  closedAt          DateTime?
+  ganadoraId        String? @unique
+  ganadora          Opcion?       @relation("MercadoGanador", fields: [ganadoraId], references: [id])
+  montoDesdeRecalc Int           @default(0)
+  opciones          Opcion[]
+  tickets           Ticket[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([estado])
+}
+
+model Opcion {
+  id            String      @id @default(uuid())
+  mercadoId     String
+  mercado       Mercado     @relation(fields: [mercadoId], references: [id], onDelete: Cascade)
+  nombre        String
+  cuotaInicial  Decimal?    @db.Decimal(6, 2)
+  cuotaActual   Decimal?    @db.Decimal(6, 2)
+  totalApostado Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  tickets       Ticket[]
+  oddUpdates    OddUpdate[]
+  mercadoGanador Mercado? @relation("MercadoGanador")
+
+  @@index([mercadoId])
+}
+
+model Apostador {
+  id                 String    @id @default(uuid())
+  alias              String    @unique
+  rangoId            String
+  rango              RankRegla @relation(fields: [rangoId], references: [id])
+  apuestasTotal      Int       @default(0)
+  apuestasAcumuladas Int       @default(0)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  tickets            Ticket[]
+}
+
+model RankRegla {
+  id                    String      @id @default(uuid())
+  nombre                String      @unique
+  orden                 Int         @unique
+  minApuestasAcumuladas Int         @default(0)
+  minMonto              Int         @default(1000)
+  maxMonto              Int
+  activo                Boolean     @default(true)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  apostadores           Apostador[]
+}
+
+model Ticket {
+  id                       String       @id @default(uuid())
+  codigo                   String       @unique
+  mercadoId                String
+  mercado                  Mercado      @relation(fields: [mercadoId], references: [id])
+  opcionId                 String
+  opcion                   Opcion       @relation(fields: [opcionId], references: [id])
+  franquiciaId             String
+  franquicia               Franquicia   @relation(fields: [franquiciaId], references: [id])
+  trabajadorId             String
+  trabajador               User         @relation("TicketTrabajador", fields: [trabajadorId], references: [id])
+  apostadorId              String
+  apostador                Apostador    @relation(fields: [apostadorId], references: [id])
+  monto                    Int
+  cuotaFijada              Decimal?     @db.Decimal(6, 2)
+  estado                   TicketEstado @default(ACTIVO)
+  motivoAnulacion          String?
+  anulacionRegistradaPorId String?
+  anulacionRegistradaPor   User?        @relation("TicketAnulador", fields: [anulacionRegistradaPorId], references: [id])
+  anuladoAt                DateTime?
+  pagado                   Pago?
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+
+  @@index([mercadoId, estado])
+}
+
+model Pago {
+  id           String     @id @default(uuid())
+  ticketId     String     @unique
+  ticket       Ticket     @relation(fields: [ticketId], references: [id])
+  pagadorId    String
+  pagador      User       @relation("PagoPagador", fields: [pagadorId], references: [id])
+  franquiciaId String
+  franquicia   Franquicia @relation(fields: [franquiciaId], references: [id])
+  monto        Int
+  pagadoAt     DateTime   @default(now())
+  createdAt    DateTime   @default(now())
+}
+
+model CajaMovimiento {
+  id            String             @id @default(uuid())
+  franquiciaId  String
+  franquicia    Franquicia         @relation(fields: [franquiciaId], references: [id])
+  trabajadorId  String?
+  trabajador    User?              @relation("CajaMovTrabajador", fields: [trabajadorId], references: [id])
+  aprobadoPorId String?
+  aprobadoPor   User?              @relation("CajaMovAprobador", fields: [aprobadoPorId], references: [id])
+  cajaSesionId  String?
+  cajaSesion    CajaSesion?        @relation(fields: [cajaSesionId], references: [id])
+  tipo          CajaMovimientoTipo
+  monto         Int
+  refTipo       String?
+  refId         String?
+  notas         String?
+  createdAt     DateTime           @default(now())
+
+  @@index([franquiciaId, createdAt])
+}
+
+model OddUpdate {
+  id        String   @id @default(uuid())
+  opcionId  String
+  opcion    Opcion   @relation(fields: [opcionId], references: [id], onDelete: Cascade)
+  sesgo     Decimal  @db.Decimal(6, 4)
+  antes     Decimal? @db.Decimal(6, 2)
+  despues   Decimal? @db.Decimal(6, 2)
+  motivo    String
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([opcionId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  accion    String
+  entidad   String
+  entidadId String
+  antes     Json?
+  despues   Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model ParametroGlobal {
+  id          String   @id @default(uuid())
+  clave       String   @unique
+  valor       Json
+  descripcion String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+
+model CajaSesion {
+  id              String           @id @default(uuid())
+  franquiciaId    String
+  franquicia      Franquicia       @relation(fields: [franquiciaId], references: [id])
+  trabajadorId    String
+  trabajador      User             @relation(fields: [trabajadorId], references: [id])
+  estado          CajaSesionEstado @default(ABIERTA)
+  saldoInicial    Int
+  saldoDeclarado  Int?
+  saldoSistema    Int?
+  diferencia      Int?
+  solicitadoAt    DateTime?
+  aprobadoPorId   String?
+  aprobadoPor     User?            @relation("CajaSesionAprobador", fields: [aprobadoPorId], references: [id])
+  aprobadoAt      DateTime?
+  cerradoAt       DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  movimientos     CajaMovimiento[]
+
+  @@index([estado])
+  @@index([trabajadorId, estado])
+}
