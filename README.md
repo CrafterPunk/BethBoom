@@ -1,36 +1,86 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# BethBoom Operations Panel
 
-## Getting Started
+BethBoom is a Next.js 14 application that centralises daily operations for RP betting rooms: access control, market management, ticket sales, payouts, cash sessions, reports, and full auditing as defined in `hojatecnica.md`.
 
-First, run the development server:
+## Requirements
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Node.js 18.18 or newer (project tested with 20.x)
+- pnpm 8+
+- PostgreSQL database (Supabase compatible)
+
+## Environment
+
+Duplicate `.env.example` and adjust credentials:
+
+```
+cp .env.example .env
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Required variables:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `DATABASE_URL` / `DIRECT_URL` - connection strings for Prisma migrations and runtime
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` - remote storage/api if using Supabase
+- `SESSION_SECRET` - random long string for session signing
+- `ACCESS_CODE_PEPPER` - static pepper used when hashing AccessCodes
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Database
 
-## Learn More
+Install dependencies and apply schema:
 
-To learn more about Next.js, take a look at the following resources:
+```
+pnpm install
+pnpm db:migrate      # deploy migrations
+pnpm db:seed         # seed default HQ, ranks, parameters, and sample AccessCodes
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Useful Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Command | Description |
+| --- | --- |
+| `pnpm dev` | Start Next.js in development mode |
+| `pnpm build` | Production build (runs type check + lint) |
+| `pnpm start` | Serve production build |
+| `pnpm lint` | ESLint with zero warnings allowed |
+| `pnpm typecheck` | TypeScript check without emitting files |
+| `pnpm test` | Vitest unit suite (odds, pool distribution, rank validations) |
+| `pnpm test:watch` | Unit tests in watch mode |
+| `pnpm test:e2e` | Playwright smoke test (requires app running separately) |
+| `pnpm test:e2e:headed` | Same as above in headed mode |
 
-## Deploy on Vercel
+### Running the E2E smoke test
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The Playwright test expects a running instance (default `http://127.0.0.1:3000`). Start the dev server in one terminal, then run:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 pnpm test:e2e
+```
+
+## Project Structure (highlights)
+
+```
+src/app/(auth)         # Access code login flow
+src/app/(app)/dashboard# KPIs and alerts
+src/app/(app)/ventas   # Ticket sales
+src/app/(app)/payments # Payouts and cash integration
+src/app/(app)/cash     # Cash sessions
+src/app/(app)/markets  # Market CRUD
+src/app/(app)/apostadores # Alias management
+src/app/(app)/reports  # KPIs + CSV/JSON export
+src/app/(app)/admin    # Sedes, users, parameters, purge tools
+src/app/(app)/audits   # Log review with deletion (admin only)
+src/lib/business       # Odds, pool, rank helpers (+ unit tests)
+```
+
+## Deployment
+
+1. Ensure environment variables are configured for production DB/Supabase.
+2. Run `pnpm build` to generate the production bundle.
+3. Use `pnpm start` (or deploy to Vercel) with the same `.env` settings.
+
+## Testing Summary
+
+- **Unit tests:** `pnpm test` covers odds calculation, pool payout distribution, and rank boundary validation.
+- **Smoke E2E:** `tests/e2e/smoke.spec.ts` recorre venta -> cierre -> pago -> caja usando Playwright.
+
+Review `hojatecnica.md` for the complete functional specification that this implementation follows.
+
