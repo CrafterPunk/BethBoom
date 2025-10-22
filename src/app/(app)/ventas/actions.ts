@@ -488,7 +488,14 @@ export async function createTicketAction(input: unknown): Promise<TicketActionRe
           },
         });
 
-        await tx.auditLog.create({
+        await tx.cajaSesion.update({
+        where: { id: cajaSesion.id },
+        data: {
+          ventasTotal: { increment: monto },
+        },
+      });
+
+      await tx.auditLog.create({
           data: {
             actorId: session.userId,
             accion: "UPDATE",

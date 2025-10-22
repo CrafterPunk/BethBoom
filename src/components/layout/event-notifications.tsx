@@ -13,6 +13,7 @@ const DISPLAY_DURATION_MS = 8_000;
 const variantStyles: Record<string, string> = {
   MARKET_ODDS_THRESHOLD: "border-violet-400/40 bg-violet-950/40 text-violet-100",
   CASH_CLOSE_REQUESTED: "border-amber-400/40 bg-amber-950/40 text-amber-100",
+  CASH_CLOSE_APPROVED: "border-sky-400/40 bg-sky-950/40 text-sky-100",
   HIGH_PAYOUT: "border-emerald-400/40 bg-emerald-950/40 text-emerald-100",
 };
 

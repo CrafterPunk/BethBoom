@@ -96,6 +96,8 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
         throw new Error("CAJA_SESSION_MISSING");
       }
 
+      const saldoDisponibleAntes = cajaSesion.capitalPropio + cajaSesion.ventasTotal - cajaSesion.pagosTotal;
+
       const freshTicket = await tx.ticket.findUnique({
         where: { id: ticket.id },
         include: {
@@ -157,6 +159,10 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
         });
       }
 
+      if (payoutAmount > saldoDisponibleAntes) {
+        throw new Error("INSUFFICIENT_BALANCE");
+      }
+
       const pago = await tx.pago.create({
         data: {
           ticketId: freshTicket.id,
@@ -203,6 +209,13 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
         },
       });
 
+      await tx.cajaSesion.update({
+        where: { id: cajaSesion.id },
+        data: {
+          pagosTotal: { increment: payoutAmount },
+        },
+      });
+
       return { amount: payoutAmount, ticket: freshTicket, market: freshMarket.nombre };
     });
 
@@ -236,6 +249,9 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
       }
       if (error.message === "MARKET_FRANQUICIA_MISMATCH") {
         return { ok: false, message: "Este ticket pertenece a otra sede" };
+      }
+      if (error.message === "INSUFFICIENT_BALANCE") {
+        return { ok: false, message: "Saldo insuficiente. Pide pago en central u otro operador." };
       }
     }
 

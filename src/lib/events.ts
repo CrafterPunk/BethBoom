@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 export type AppEventType =
   | "MARKET_ODDS_THRESHOLD"
   | "CASH_CLOSE_REQUESTED"
+  | "CASH_CLOSE_APPROVED"
   | "HIGH_PAYOUT";
 
 export type AppEvent<TPayload = Record<string, unknown>> = {

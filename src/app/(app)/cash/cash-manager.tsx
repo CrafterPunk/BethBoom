@@ -1,6 +1,7 @@
-﻿"use client";
+"use client";
 
 import type { ReactNode } from "react";
+import type { CajaLiquidacionTipo } from "@prisma/client";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
@@ -27,43 +28,55 @@ const VALUE_TONE_CLASSES: Record<Tone, string> = {
 const formatCurrency = (value: number) =>
   value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
-function summarizeWorkerDifference(diff: number | null): { label: string; tone: Tone; hint?: string } {
-  if (diff === null) {
+function computeLiquidacion(
+  capitalPropio: number,
+  ventasTotal: number,
+  pagosTotal: number,
+): { tipo: CajaLiquidacionTipo; monto: number } {
+  const ventasMenosPagos = ventasTotal - pagosTotal;
+
+  if (ventasMenosPagos > capitalPropio) {
     return {
-      label: "Pendiente de conciliaciÃ³n",
-      tone: "warning",
-      hint: "Declara el saldo final para solicitar el cierre.",
+      tipo: "WORKER_OWES",
+      monto: ventasMenosPagos - capitalPropio,
     };
   }
-  if (diff === 0) {
+
+  if (pagosTotal > capitalPropio + ventasTotal) {
     return {
-      label: "Cuadre exacto",
-      tone: "positive",
-      hint: "No hay diferencias frente al sistema.",
+      tipo: "HQ_OWES",
+      monto: pagosTotal - (capitalPropio + ventasTotal),
     };
   }
-  if (diff > 0) {
-    return {
-      label: `Debes entregar $${formatCurrency(diff)}`,
-      tone: "negative",
-      hint: "Entrega el excedente a central durante el cierre.",
-    };
-  }
-  return {
-    label: `Sistema te debe $${formatCurrency(Math.abs(diff))}`,
-    tone: "warning",
-    hint: "Coordina el ajuste con Admin antes de cerrar.",
-  };
+
+  return { tipo: "BALANCEADO", monto: 0 };
 }
 
-function summarizeAdminDifference(diff: number): { label: string; tone: Tone } {
-  if (diff === 0) {
-    return { label: "Cuadre exacto", tone: "neutral" };
+function summarizeLiquidacion(
+  tipo: CajaLiquidacionTipo,
+  monto: number,
+): { label: string; tone: Tone; hint?: string } {
+  if (monto <= 0 || tipo === "BALANCEADO") {
+    return {
+      label: "Balanceado",
+      tone: "neutral",
+      hint: "No hay transferencias pendientes.",
+    };
   }
-  if (diff > 0) {
-    return { label: `Recibir $${formatCurrency(diff)}`, tone: "positive" };
+
+  if (tipo === "WORKER_OWES") {
+    return {
+      label: `Debes entregar $${formatCurrency(monto)}`,
+      tone: "negative",
+      hint: "Transfiere ese monto a la sede para cerrar la jornada.",
+    };
   }
-  return { label: `Entregar $${formatCurrency(Math.abs(diff))}`, tone: "warning" };
+
+  return {
+    label: `La sede te debe $${formatCurrency(monto)}`,
+    tone: "warning",
+    hint: "Solicita la reposición desde central antes de continuar.",
+  };
 }
 
 type SummaryCardProps = {
@@ -95,10 +108,13 @@ type CashMovement = {
 type CashSessionSummary = {
   id: string;
   estado: "ABIERTA" | "SOLICITADA" | "CERRADA";
-  saldoInicial: number;
-  saldoDeclarado: number | null;
-  saldoSistema: number;
-  diferencia: number | null;
+  capitalPropio: number;
+  ventasTotal: number;
+  pagosTotal: number;
+  saldoDisponible: number;
+  liquidacionTipo: CajaLiquidacionTipo | null;
+  liquidacionMonto: number;
+  reporteCierre: Record<string, unknown> | null;
   franquiciaNombre: string;
   movimientos: CashMovement[];
 };
@@ -107,10 +123,13 @@ type PendingSession = {
   id: string;
   trabajador: string;
   franquiciaNombre: string;
-  saldoInicial: number;
-  saldoDeclarado: number;
-  saldoSistema: number;
-  diferencia: number | null;
+  capitalPropio: number;
+  ventasTotal: number;
+  pagosTotal: number;
+  saldoDisponible: number;
+  liquidacionTipo: CajaLiquidacionTipo | null;
+  liquidacionMonto: number;
+  reporteCierre: Record<string, unknown> | null;
 };
 
 type CashManagerProps = {
@@ -142,12 +161,7 @@ export function CashManager({ data }: CashManagerProps) {
   } = data;
   const router = useRouter();
 
-  const [openAmount, setOpenAmount] = useState("0");
-  const [closeAmount, setCloseAmount] = useState(() => {
-    if (!session) return "0";
-    const base = session.saldoDeclarado ?? session.saldoSistema;
-    return base.toString();
-  });
+  const [capitalAmount, setCapitalAmount] = useState(() => (session?.capitalPropio ?? 0).toString());
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [message, setMessage] = useState<MessageState | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -157,10 +171,9 @@ export function CashManager({ data }: CashManagerProps) {
 
   useEffect(() => {
     if (session) {
-      const base = session.saldoDeclarado ?? session.saldoSistema;
-      setCloseAmount(base.toString());
+      setCapitalAmount((session.capitalPropio ?? 0).toString());
     }
-  }, [session?.id, session?.saldoDeclarado, session?.saldoSistema]);
+  }, [session?.id, session?.capitalPropio]);
 
   useEffect(() => {
     if (defaultFranquiciaId) {
@@ -181,14 +194,14 @@ export function CashManager({ data }: CashManagerProps) {
   const handleOpen = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canOpen) return;
-    const saldoInicial = Number.parseInt(openAmount, 10) || 0;
+    const capitalPropio = Number.parseInt(capitalAmount, 10) || 0;
     startTransition(async () => {
       if (canChooseFranquicia && !selectedFranquiciaId) {
         setMessage({ content: "Selecciona la franquicia para abrir la caja.", variant: "error" });
         return;
       }
 
-      const payload: { saldoInicial: number; franquiciaId?: string } = { saldoInicial };
+      const payload: { capitalPropio: number; franquiciaId?: string } = { capitalPropio };
       if (canChooseFranquicia && selectedFranquiciaId) {
         payload.franquiciaId = selectedFranquiciaId;
       }
@@ -198,12 +211,9 @@ export function CashManager({ data }: CashManagerProps) {
     });
   };
 
-  const handleRequestClose = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!session || session.estado !== "ABIERTA") return;
-    const saldoDeclarado = Number.parseInt(closeAmount, 10) || 0;
+  const handleRequestClose = () => {
     startTransition(async () => {
-      const result = await requestCashCloseAction({ saldoDeclarado });
+      const result = await requestCashCloseAction({});
       resetAndRefresh({ content: result.message, variant: result.ok ? "success" : "error" });
     });
   };
@@ -216,49 +226,46 @@ export function CashManager({ data }: CashManagerProps) {
     });
   };
 
-  const renderMovements = (movimientos: CashMovement[]) => (
-    <div className="mt-4 space-y-2">
-      {movimientos.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Sin movimientos registrados.</p>
-      ) : (
-        movimientos
-          .slice()
-          .reverse()
-          .map((movimiento) => (
-            <div
-              key={movimiento.id}
-              className="flex items-center justify-between rounded border border-border/20 px-3 py-2 text-sm"
-            >
-              <span>
-                {movimiento.tipo} - {new Date(movimiento.createdAt).toLocaleString()}
-                {movimiento.notas ? ` - ${movimiento.notas}` : ""}
-              </span>
-              <span className={cn(movimiento.tipo === "EGRESO" ? "text-rose-300" : "text-emerald-300")}>
-                {movimiento.tipo === "EGRESO" ? "-" : "+"}
-                {movimiento.monto.toLocaleString()} USD
-              </span>
-            </div>
-          ))
-      )}
-    </div>
-  );
-
-  const sessionDifference = session
-    ? session.diferencia ?? (session.saldoDeclarado !== null ? session.saldoDeclarado - session.saldoSistema : null)
-    : null;
-  const workerSummary = summarizeWorkerDifference(sessionDifference);
-
   const pendingSummaries = pendingSessions.map((item) => {
-    const difference = item.diferencia ?? item.saldoDeclarado - item.saldoSistema;
+    const tipo = item.liquidacionTipo ?? "BALANCEADO";
+    const monto = item.liquidacionMonto ?? 0;
+    const summary = summarizeLiquidacion(tipo, monto);
+
     return {
       ...item,
-      difference,
-      summary: summarizeAdminDifference(difference),
+      liquidacionTipo: tipo,
+      liquidacionMonto: monto,
+      summary,
     };
   });
 
-  const totalAdminDiff = pendingSummaries.reduce((acc, item) => acc + item.difference, 0);
-  const totalSummary = summarizeAdminDifference(totalAdminDiff);
+  const totalAdminNet = pendingSummaries.reduce((acc, item) => {
+    if (item.liquidacionTipo === "WORKER_OWES") {
+      return acc + item.liquidacionMonto;
+    }
+    if (item.liquidacionTipo === "HQ_OWES") {
+      return acc - item.liquidacionMonto;
+    }
+    return acc;
+  }, 0);
+
+  const totalSummary = summarizeLiquidacion(
+    totalAdminNet > 0 ? "WORKER_OWES" : totalAdminNet < 0 ? "HQ_OWES" : "BALANCEADO",
+    Math.abs(totalAdminNet),
+  );
+
+  const liveLiquidacion = session
+    ? computeLiquidacion(session.capitalPropio, session.ventasTotal, session.pagosTotal)
+    : { tipo: "BALANCEADO" as CajaLiquidacionTipo, monto: 0 };
+
+  const liquidacionSummary = summarizeLiquidacion(
+    session?.estado === "SOLICITADA"
+      ? (session.liquidacionTipo ?? "BALANCEADO")
+      : liveLiquidacion.tipo,
+    session?.estado === "SOLICITADA"
+      ? session.liquidacionMonto ?? 0
+      : liveLiquidacion.monto,
+  );
 
   return (
     <div className="space-y-6">
@@ -280,7 +287,7 @@ export function CashManager({ data }: CashManagerProps) {
       <Card className="border-border/60 bg-card/80">
         <CardHeader>
           <CardTitle>Mi caja</CardTitle>
-          <CardDescription>Gestiona la apertura y cierre de tu turno.</CardDescription>
+          <CardDescription>Gestiona la apertura diaria y el cierre de tu turno.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {!session ? (
@@ -305,14 +312,14 @@ export function CashManager({ data }: CashManagerProps) {
                 </div>
               ) : null}
               <div className="space-y-2">
-                <Label htmlFor="saldo-inicial">Saldo inicial (USD)</Label>
+                <Label htmlFor="capital-propio">Capital propio (USD)</Label>
                 <Input
-                  id="saldo-inicial"
+                  id="capital-propio"
                   type="number"
                   min={0}
                   step={1}
-                  value={openAmount}
-                  onChange={(event) => setOpenAmount(event.target.value)}
+                  value={capitalAmount}
+                  onChange={(event) => setCapitalAmount(event.target.value)}
                   required
                   disabled={!canOpen || isPending}
                 />
@@ -331,64 +338,78 @@ export function CashManager({ data }: CashManagerProps) {
           ) : (
             <div className="space-y-4">
               <div className="grid gap-3 lg:grid-cols-3">
-                <SummaryCard label="Estado" value={session.estado} />
-                <SummaryCard label="Franquicia" value={session.franquiciaNombre || "Sin asignar"} />
-                <SummaryCard label="Capital inicial" value={`$${formatCurrency(session.saldoInicial)}`} />
+                <SummaryCard label="Capital propio" value={`$${formatCurrency(session.capitalPropio)}`} />
+                <SummaryCard label="Ventas del día" value={`$${formatCurrency(session.ventasTotal)}`} />
+                <SummaryCard label="Pagos del día" value={`$${formatCurrency(session.pagosTotal)}`} />
                 <SummaryCard
-                  label="Saldo sistema"
-                  value={`$${formatCurrency(session.saldoSistema)}`}
-                  hint="Resultado segun movimientos registrados."
+                  label="Saldo disponible"
+                  value={`$${formatCurrency(session.saldoDisponible)}`}
+                  hint="Capital propio + ventas - pagos registrados."
                 />
                 <SummaryCard
-                  label="Saldo declarado"
-                  value={
-                    session.saldoDeclarado !== null
-                      ? `$${formatCurrency(session.saldoDeclarado)}`
-                      : "Pendiente"
-                  }
-                  tone={session.saldoDeclarado === null ? "warning" : "neutral"}
+                  label="Liquidación estimada"
+                  value={liquidacionSummary.label}
+                  tone={liquidacionSummary.tone}
+                  hint={liquidacionSummary.hint}
+                />
+                <SummaryCard
+                  label="Estado"
+                  value={session.estado}
                   hint={
-                    session.saldoDeclarado === null
-                      ? "Ingresa el monto contado para solicitar el cierre."
+                    session.estado === "SOLICITADA"
+                      ? "Espera la aprobación para volver a abrir con cualquier capital disponible."
                       : undefined
                   }
-                />
-                <SummaryCard
-                  label="Resultado"
-                  value={workerSummary.label}
-                  tone={workerSummary.tone}
-                  hint={workerSummary.hint}
                 />
               </div>
 
               {session.estado === "ABIERTA" ? (
-                <form className="grid gap-4 md:max-w-sm" onSubmit={handleRequestClose}>
-                  <div className="space-y-2">
-                    <Label htmlFor="saldo-declarado">Saldo declarado (USD)</Label>
-                    <Input
-                      id="saldo-declarado"
-                      type="number"
-                      min={0}
-                      step={1}
-                      value={closeAmount}
-                      onChange={(event) => setCloseAmount(event.target.value)}
-                      required
-                      disabled={isPending}
-                    />
-                  </div>
-                  <Button type="submit" disabled={isPending}>
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    Cuando finalices el turno, solicita el cierre. El sistema calculará automáticamente cuánto debes
+                    entregar o recibir.
+                  </p>
+                  <Button type="button" onClick={handleRequestClose} disabled={isPending}>
                     {isPending ? "Enviando..." : "Solicitar cierre"}
                   </Button>
-                </form>
+                </div>
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  Cierre solicitado. Espera la aprobaciÃ³n del Administrador.
-                </p>
+                <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm text-muted-foreground">
+                  <p>Solicitud enviada. Coordina la transferencia in-game y espera la aprobación del administrador.</p>
+                  <p className="mt-2 text-xs">Una vez aprobada podrás abrir una caja nueva con el capital que tengas disponible.</p>
+                </div>
               )}
 
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Movimientos recientes</h3>
-                {renderMovements(session.movimientos)}
+                <div className="mt-4 space-y-2">
+                  {session.movimientos.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Sin movimientos registrados.</p>
+                  ) : (
+                    session.movimientos
+                      .slice()
+                      .reverse()
+                      .map((movimiento) => (
+                        <div
+                          key={movimiento.id}
+                          className="flex items-center justify-between rounded border border-border/20 px-3 py-2 text-sm"
+                        >
+                          <span>
+                            {movimiento.tipo} - {new Date(movimiento.createdAt).toLocaleString()}
+                            {movimiento.notas ? ` - ${movimiento.notas}` : ""}
+                          </span>
+                          <span
+                            className={cn(
+                              movimiento.tipo === "EGRESO" ? "text-rose-300" : "text-emerald-300",
+                            )}
+                          >
+                            {movimiento.tipo === "EGRESO" ? "-" : "+"}
+                            {movimiento.monto.toLocaleString()} USD
+                          </span>
+                        </div>
+                      ))
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -399,7 +420,7 @@ export function CashManager({ data }: CashManagerProps) {
         <Card className="border-border/60 bg-card/80">
           <CardHeader>
             <CardTitle>Solicitudes pendientes</CardTitle>
-            <CardDescription>Aprueba los cierres de caja enviados por los vendedores.</CardDescription>
+            <CardDescription>Aprueba los cierres luego de conciliar los montos in-game.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {pendingSummaries.length === 0 ? (
@@ -410,19 +431,18 @@ export function CashManager({ data }: CashManagerProps) {
                   <div key={item.id} className="space-y-3 rounded border border-border/40 bg-background/40 p-3">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <p className="text-sm font-semibold text-foreground">{item.trabajador}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {item.franquiciaNombre || "Sin asignar"}
-                      </p>
+                      <p className="text-xs text-muted-foreground">{item.franquiciaNombre || "Sin asignar"}</p>
                     </div>
-                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                      <SummaryCard label="Capital inicial" value={`$${formatCurrency(item.saldoInicial)}`} />
-                      <SummaryCard label="Saldo sistema" value={`$${formatCurrency(item.saldoSistema)}`} />
-                      <SummaryCard label="Saldo declarado" value={`$${formatCurrency(item.saldoDeclarado)}`} />
+                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+                      <SummaryCard label="Capital propio" value={`$${formatCurrency(item.capitalPropio)}`} />
+                      <SummaryCard label="Ventas" value={`$${formatCurrency(item.ventasTotal)}`} />
+                      <SummaryCard label="Pagos" value={`$${formatCurrency(item.pagosTotal)}`} />
+                      <SummaryCard label="Saldo disponible" value={`$${formatCurrency(item.saldoDisponible)}`} />
                       <SummaryCard
-                        label="Resultado"
+                        label="Liquidación"
                         value={item.summary.label}
                         tone={item.summary.tone}
-                        hint="Conciliar este monto antes de aprobar."
+                        hint={item.summary.hint}
                       />
                     </div>
                     <div className="flex justify-end">
@@ -453,9 +473,3 @@ export function CashManager({ data }: CashManagerProps) {
     </div>
   );
 }
-
-
-
-
-
-

@@ -1,5 +1,4 @@
 ﻿import {
-  CajaMovimientoTipo,
   CajaSesionEstado,
   UserRole,
 } from "@prisma/client";
@@ -8,19 +7,6 @@ import { requireSession } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";
 
 import { CashManager } from "./cash-manager";
-
-function computeSaldoSistema(movimientos: Array<{ tipo: CajaMovimientoTipo; monto: number }>) {
-  return movimientos.reduce((sum, movimiento) => {
-    switch (movimiento.tipo) {
-      case CajaMovimientoTipo.EGRESO:
-        return sum - movimiento.monto;
-      case CajaMovimientoTipo.AJUSTE:
-        return sum + movimiento.monto;
-      default:
-        return sum + movimiento.monto;
-    }
-  }, 0);
-}
 
 export default async function CashPage() {
   const session = await requireSession();
@@ -84,10 +70,16 @@ export default async function CashPage() {
     ? {
         id: mySession.id,
         estado: mySession.estado,
-        saldoInicial: mySession.saldoInicial,
-        saldoDeclarado: mySession.saldoDeclarado ?? null,
-        saldoSistema: computeSaldoSistema(mySession.movimientos),
-        diferencia: mySession.diferencia ?? null,
+        capitalPropio: mySession.capitalPropio,
+        ventasTotal: mySession.ventasTotal,
+        pagosTotal: mySession.pagosTotal,
+        saldoDisponible: mySession.capitalPropio + mySession.ventasTotal - mySession.pagosTotal,
+        liquidacionTipo: mySession.liquidacionTipo ?? null,
+        liquidacionMonto: mySession.liquidacionMonto ?? 0,
+        reporteCierre:
+          mySession.reporteCierre && typeof mySession.reporteCierre === "object" && !Array.isArray(mySession.reporteCierre)
+            ? (mySession.reporteCierre as Record<string, unknown>)
+            : null,
         franquiciaNombre: mySession.franquicia?.nombre ?? "",
         movimientos: mySession.movimientos.slice(-50).map((movimiento) => ({
           id: movimiento.id,
@@ -99,15 +91,24 @@ export default async function CashPage() {
       }
     : null;
 
-  const pendingDtos = pendingSessions.map((item) => ({
-    id: item.id,
-    trabajador: item.trabajador.displayName,
-    franquiciaNombre: item.franquicia?.nombre ?? "",
-    saldoDeclarado: item.saldoDeclarado ?? 0,
-    saldoSistema: computeSaldoSistema(item.movimientos),
-    diferencia: item.diferencia ?? null,
-    saldoInicial: item.saldoInicial,
-  }));
+  const pendingDtos = pendingSessions.map((item) => {
+    const saldoDisponible = item.capitalPropio + item.ventasTotal - item.pagosTotal;
+    return {
+      id: item.id,
+      trabajador: item.trabajador.displayName,
+      franquiciaNombre: item.franquicia?.nombre ?? "",
+      capitalPropio: item.capitalPropio,
+      ventasTotal: item.ventasTotal,
+      pagosTotal: item.pagosTotal,
+      saldoDisponible,
+      liquidacionTipo: item.liquidacionTipo ?? null,
+      liquidacionMonto: item.liquidacionMonto ?? 0,
+      reporteCierre:
+        item.reporteCierre && typeof item.reporteCierre === "object" && !Array.isArray(item.reporteCierre)
+          ? (item.reporteCierre as Record<string, unknown>)
+          : null,
+    };
+  });
 
   return (
     <CashManager

@@ -4,42 +4,30 @@ import { buildAppEvent, emitAppEvent } from "@/lib/events";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
+  CajaLiquidacionTipo,
   CajaMovimientoTipo,
   CajaSesionEstado,
   Prisma,
   UserRole,
 } from "@prisma/client";
 
+
+
 import { requireSession } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";
 
 const openSchema = z.object({
-  saldoInicial: z.number().int().nonnegative(),
+  capitalPropio: z.number().int().nonnegative(),
   franquiciaId: z.string().uuid().optional(),
 });
 
-const requestCloseSchema = z.object({
-  saldoDeclarado: z.number().int().nonnegative(),
-});
+const requestCloseSchema = z.object({}).strict();
 
 const approveSchema = z.object({
   sessionId: z.string().uuid(),
 });
 
 type ActionResult = { ok: true; message: string } | { ok: false; message: string };
-
-function computeSaldoSistema(movimientos: Array<{ tipo: CajaMovimientoTipo; monto: number }>) {
-  return movimientos.reduce((sum, movimiento) => {
-    switch (movimiento.tipo) {
-      case CajaMovimientoTipo.EGRESO:
-        return sum - movimiento.monto;
-      case CajaMovimientoTipo.AJUSTE:
-        return sum + movimiento.monto;
-      default:
-        return sum + movimiento.monto;
-    }
-  }, 0);
-}
 
 export async function openCashSessionAction(input: unknown): Promise<ActionResult> {
   const session = await requireSession();
@@ -78,21 +66,21 @@ export async function openCashSessionAction(input: unknown): Promise<ActionResul
       data: {
         franquiciaId,
         trabajadorId: session.userId,
-        saldoInicial: parsed.data.saldoInicial,
+        capitalPropio: parsed.data.capitalPropio,
       },
     });
 
-    if (parsed.data.saldoInicial > 0) {
+    if (parsed.data.capitalPropio > 0) {
       await tx.cajaMovimiento.create({
         data: {
           franquiciaId,
           trabajadorId: session.userId,
           cajaSesionId: cajaSesion.id,
           tipo: CajaMovimientoTipo.APERTURA,
-          monto: parsed.data.saldoInicial,
+          monto: parsed.data.capitalPropio,
           refTipo: "CAJA",
           refId: cajaSesion.id,
-          notas: "Apertura de caja",
+          notas: "Capital propio declarado",
         },
       });
     }
@@ -105,7 +93,7 @@ export async function openCashSessionAction(input: unknown): Promise<ActionResul
         entidadId: cajaSesion.id,
         antes: Prisma.JsonNull,
         despues: {
-          saldoInicial: parsed.data.saldoInicial,
+          capitalPropio: parsed.data.capitalPropio,
           franquiciaId,
         },
       },
@@ -122,11 +110,20 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
     return { ok: false, message: "No autorizado" };
   }
 
-  const parsed = requestCloseSchema.safeParse(input);
+  const parsed = requestCloseSchema.safeParse(input ?? {});
   if (!parsed.success) {
     return { ok: false, message: "Solicitud invalida" };
   }
 
+
+  let cierreResumen: {
+    capitalPropio: number;
+    ventas: number;
+    pagos: number;
+    saldoDisponible: number;
+    liquidacionTipo: CajaLiquidacionTipo;
+    liquidacionMonto: number;
+  } | null = null;
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -135,30 +132,51 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
           trabajadorId: session.userId,
           estado: CajaSesionEstado.ABIERTA,
         },
-        include: {
-          movimientos: {
-            select: {
-              tipo: true,
-              monto: true,
-            },
-          },
-        },
       });
 
       if (!cajaSesion) {
         throw new Error("SESSION_NOT_FOUND");
       }
 
-      const saldoSistema = computeSaldoSistema(cajaSesion.movimientos);
-      const diferencia = parsed.data.saldoDeclarado - saldoSistema;
+      const saldoDisponible = cajaSesion.capitalPropio + cajaSesion.ventasTotal - cajaSesion.pagosTotal;
+      const ventasMenosPagos = cajaSesion.ventasTotal - cajaSesion.pagosTotal;
+
+      let liquidacionTipo: CajaLiquidacionTipo = CajaLiquidacionTipo.BALANCEADO;
+      let liquidacionMonto = 0;
+
+      if (ventasMenosPagos > cajaSesion.capitalPropio) {
+        liquidacionTipo = CajaLiquidacionTipo.WORKER_OWES;
+        liquidacionMonto = ventasMenosPagos - cajaSesion.capitalPropio;
+      } else if (cajaSesion.pagosTotal > cajaSesion.capitalPropio + cajaSesion.ventasTotal) {
+        liquidacionTipo = CajaLiquidacionTipo.HQ_OWES;
+        liquidacionMonto = cajaSesion.pagosTotal - (cajaSesion.capitalPropio + cajaSesion.ventasTotal);
+      }
+
+      const reporteCierre = {
+        capitalPropio: cajaSesion.capitalPropio,
+        ventas: cajaSesion.ventasTotal,
+        pagos: cajaSesion.pagosTotal,
+        saldoDisponible,
+        liquidacionTipo,
+        liquidacionMonto,
+      } as const;
+
+      cierreResumen = {
+        capitalPropio: cajaSesion.capitalPropio,
+        ventas: cajaSesion.ventasTotal,
+        pagos: cajaSesion.pagosTotal,
+        saldoDisponible,
+        liquidacionTipo,
+        liquidacionMonto,
+      };
 
       await tx.cajaSesion.update({
         where: { id: cajaSesion.id },
         data: {
           estado: CajaSesionEstado.SOLICITADA,
-          saldoDeclarado: parsed.data.saldoDeclarado,
-          saldoSistema,
-          diferencia,
+          liquidacionTipo,
+          liquidacionMonto,
+          reporteCierre,
           solicitadoAt: new Date(),
         },
       });
@@ -174,9 +192,9 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
           },
           despues: {
             estado: CajaSesionEstado.SOLICITADA,
-            saldoDeclarado: parsed.data.saldoDeclarado,
-            saldoSistema,
-            diferencia,
+            liquidacionTipo,
+            liquidacionMonto,
+            saldoDisponible,
           },
         },
       });
@@ -193,10 +211,9 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
     buildAppEvent({
       type: "CASH_CLOSE_REQUESTED",
       message: `Cierre solicitado por ${session.displayName}`,
-      payload: { saldoDeclarado: parsed.data.saldoDeclarado },
+      payload: cierreResumen ?? undefined,
     }),
-);
-
+  );
 
   revalidatePath("/cash");
   return { ok: true, message: "Cierre solicitado" };
@@ -213,18 +230,23 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
     return { ok: false, message: "Solicitud invalida" };
   }
 
-  let declaredSaldo = 0;
+  let operadorNombre: string | null = null;
+  let resumen: {
+    capitalPropio: number;
+    ventas: number;
+    pagos: number;
+    saldoDisponible: number;
+    liquidacionTipo: CajaLiquidacionTipo;
+    liquidacionMonto: number;
+  } | null = null;
 
   try {
     await prisma.$transaction(async (tx) => {
       const cajaSesion = await tx.cajaSesion.findUnique({
         where: { id: parsed.data.sessionId },
         include: {
-          movimientos: {
-            select: {
-              tipo: true,
-              monto: true,
-            },
+          trabajador: {
+            select: { displayName: true },
           },
         },
       });
@@ -233,21 +255,30 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
         throw new Error("SESSION_NOT_READY");
       }
 
-      const saldoSistema = computeSaldoSistema(cajaSesion.movimientos);
-      const diferencia = (cajaSesion.saldoDeclarado ?? 0) - saldoSistema;
+      operadorNombre = cajaSesion.trabajador?.displayName ?? null;
+
+      const liquidacionTipo = cajaSesion.liquidacionTipo ?? CajaLiquidacionTipo.BALANCEADO;
+      const liquidacionMonto = cajaSesion.liquidacionMonto ?? 0;
+      const saldoDisponible = cajaSesion.capitalPropio + cajaSesion.ventasTotal - cajaSesion.pagosTotal;
+
+      resumen = {
+        capitalPropio: cajaSesion.capitalPropio,
+        ventas: cajaSesion.ventasTotal,
+        pagos: cajaSesion.pagosTotal,
+        saldoDisponible,
+        liquidacionTipo,
+        liquidacionMonto,
+      };
 
       await tx.cajaSesion.update({
         where: { id: cajaSesion.id },
         data: {
           estado: CajaSesionEstado.CERRADA,
-          saldoSistema,
-          diferencia,
           aprobadoPorId: session.userId,
           aprobadoAt: new Date(),
           cerradoAt: new Date(),
         },
       });
-      declaredSaldo = cajaSesion.saldoDeclarado ?? 0;
 
       await tx.auditLog.create({
         data: {
@@ -260,8 +291,8 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
           },
           despues: {
             estado: CajaSesionEstado.CERRADA,
-            saldoSistema,
-            diferencia,
+            liquidacionTipo,
+            liquidacionMonto,
           },
         },
       });
@@ -274,17 +305,37 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
     return { ok: false, message: "No se pudo aprobar el cierre" };
   }
 
+  let payload: Record<string, unknown> | undefined;
+  if (resumen) {
+    payload = {
+      trabajador: operadorNombre,
+      resumen,
+    };
+  } else if (operadorNombre) {
+    payload = { trabajador: operadorNombre };
+  }
+
   emitAppEvent(
     buildAppEvent({
-      type: "CASH_CLOSE_REQUESTED",
-      message: `Cierre solicitado por ${session.displayName}`,
-      payload: { saldoDeclarado: declaredSaldo },
+      type: "CASH_CLOSE_APPROVED",
+      message: `Cierre aprobado${operadorNombre ? ` para ${operadorNombre}` : ""}`,
+      payload,
     }),
   );
 
   revalidatePath("/cash");
   return { ok: true, message: "Caja cerrada" };
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

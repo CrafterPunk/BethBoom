@@ -55,6 +55,13 @@ enum CajaSesionEstado {
   CERRADA
 }
 
+enum CajaLiquidacionTipo {
+  BALANCEADO
+  WORKER_OWES
+  HQ_OWES
+}
+
+
 model Franquicia {
   id                       String           @id @default(uuid())
   nombre                   String
@@ -327,28 +334,32 @@ model ParametroGlobal {
 
 
 model CajaSesion {
-  id              String           @id @default(uuid())
-  franquiciaId    String
-  franquicia      Franquicia       @relation(fields: [franquiciaId], references: [id])
-  trabajadorId    String
-  trabajador      User             @relation(fields: [trabajadorId], references: [id])
-  estado          CajaSesionEstado @default(ABIERTA)
-  saldoInicial    Int
-  saldoDeclarado  Int?
-  saldoSistema    Int?
-  diferencia      Int?
-  solicitadoAt    DateTime?
-  aprobadoPorId   String?
-  aprobadoPor     User?            @relation("CajaSesionAprobador", fields: [aprobadoPorId], references: [id])
-  aprobadoAt      DateTime?
-  cerradoAt       DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  movimientos     CajaMovimiento[]
+  id               String               @id @default(uuid())
+  franquiciaId     String
+  franquicia       Franquicia           @relation(fields: [franquiciaId], references: [id])
+  trabajadorId     String
+  trabajador       User                 @relation(fields: [trabajadorId], references: [id])
+  estado           CajaSesionEstado     @default(ABIERTA)
+  capitalPropio    Int                  @default(0)
+  ventasTotal      Int                  @default(0)
+  pagosTotal       Int                  @default(0)
+  liquidacionTipo  CajaLiquidacionTipo?
+  liquidacionMonto Int                  @default(0)
+  reporteCierre    Json?
+  solicitadoAt     DateTime?
+  aprobadoPorId    String?
+  aprobadoPor      User?                @relation("CajaSesionAprobador", fields: [aprobadoPorId], references: [id])
+  aprobadoAt       DateTime?
+  cerradoAt        DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  movimientos      CajaMovimiento[]
 
   @@index([estado])
   @@index([trabajadorId, estado])
 }
+
+
 
 
 

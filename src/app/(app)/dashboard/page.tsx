@@ -1,5 +1,5 @@
 ﻿import {
-  CajaMovimientoTipo,
+  CajaLiquidacionTipo,
   CajaSesionEstado,
   MercadoEstado,
   MercadoTipo,
@@ -11,27 +11,6 @@ import { requireSession } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";
 import { DashboardWidget, MetricsGrid, SimpleList } from "./widgets";
 import type { MetricItem, ListItem } from "./widgets";
-
-function computeSaldoSistema(movimientos: Array<{ tipo: CajaMovimientoTipo; monto: number }>) {
-  return movimientos.reduce((sum, movimiento) => {
-    switch (movimiento.tipo) {
-      case CajaMovimientoTipo.EGRESO:
-        return sum - movimiento.monto;
-      case CajaMovimientoTipo.AJUSTE:
-        return sum + movimiento.monto;
-      default:
-        return sum + movimiento.monto;
-    }
-  }, 0);
-}
-
-function formatCurrency(value: number) {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
-
-function formatPercent(value: number) {
-  return `${value.toFixed(2)}%`;
-}
 
 async function getPromotionThreshold() {
   const param = await prisma.parametroGlobal.findUnique({ where: { clave: "promocion_apuestas" } });
@@ -47,34 +26,81 @@ const ROLE_SUBTITLE: Record<UserRole, string> = {
   [UserRole.AUDITOR_FRANQUICIA]: "Actividad de la franquicia asignada.",
 };
 
-function describeWorkerDifference(diff: number | null) {
-  if (diff === null) {
-    return {
-      text: "Pendiente de conciliaciÃ³n",
-      toneClass: "text-amber-300",
-      hint: "Declara el saldo final para solicitar el cierre.",
-    };
-  }
-  if (diff === 0) {
-    return {
-      text: "Cuadre exacto",
-      toneClass: "text-emerald-300",
-      hint: "No hay diferencias con el sistema.",
-    };
-  }
-  if (diff > 0) {
-    return {
-      text: `Debes entregar $${formatCurrency(diff)}`,
-      toneClass: "text-red-400",
-      hint: "Entrega el excedente a central al cerrar.",
-    };
-  }
-  return {
-    text: `Sistema te debe $${formatCurrency(Math.abs(diff))}`,
-    toneClass: "text-amber-300",
-    hint: "Registra el ajuste con Admin antes de finalizar.",
-  };
+function formatCurrency(value: number) {
+  return value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
+
+function formatPercent(value: number) {
+  return `${value.toFixed(2)}%`;
+}
+
+function computeLiquidacion(capitalPropio: number, ventasTotal: number, pagosTotal: number) {
+  const ventasMenosPagos = ventasTotal - pagosTotal;
+
+  if (ventasMenosPagos > capitalPropio) {
+    return { tipo: CajaLiquidacionTipo.WORKER_OWES, monto: ventasMenosPagos - capitalPropio } as const;
+  }
+
+  if (pagosTotal > capitalPropio + ventasTotal) {
+    return { tipo: CajaLiquidacionTipo.HQ_OWES, monto: pagosTotal - (capitalPropio + ventasTotal) } as const;
+  }
+
+  return { tipo: CajaLiquidacionTipo.BALANCEADO, monto: 0 } as const;
+}
+
+function describeWorkerDifference(capitalPropio: number, ventasTotal: number, pagosTotal: number) {
+
+  const liquidacion = computeLiquidacion(capitalPropio, ventasTotal, pagosTotal);
+
+
+
+  if (liquidacion.tipo === CajaLiquidacionTipo.WORKER_OWES) {
+
+    return {
+
+      text: `Debes entregar $${formatCurrency(liquidacion.monto)}`,
+
+      toneClass: "text-red-400",
+
+      hint: "Entrega el excedente a central al cerrar.",
+
+    };
+
+  }
+
+
+
+  if (liquidacion.tipo === CajaLiquidacionTipo.HQ_OWES) {
+
+    return {
+
+      text: `Sistema te debe $${formatCurrency(liquidacion.monto)}`,
+
+      toneClass: "text-amber-300",
+
+      hint: "Registra el ajuste con Admin antes de finalizar.",
+
+    };
+
+  }
+
+
+
+  const saldoDisponible = capitalPropio + ventasTotal - pagosTotal;
+
+  return {
+
+    text: "Balance controlado",
+
+    toneClass: "text-emerald-300",
+
+    hint: `Saldo disponible $${formatCurrency(saldoDisponible)}`
+
+  };
+
+}
+
+
 
 function describeAdminDifference(diff: number) {
   if (diff === 0) {
@@ -171,19 +197,20 @@ export default async function DashboardPage() {
   ).length;
 
   const normalizedSessions = openSessionsRaw.map((item) => {
-    const saldoSistema = computeSaldoSistema(item.movimientos);
-    const saldoDeclarado = item.saldoDeclarado ?? null;
-    const difference = item.diferencia ?? (saldoDeclarado !== null ? saldoDeclarado - saldoSistema : null);
+    const saldoDisponible = item.capitalPropio + item.ventasTotal - item.pagosTotal;
+    const liquidacion = computeLiquidacion(item.capitalPropio, item.ventasTotal, item.pagosTotal);
     return {
       id: item.id,
       trabajador: item.trabajador.displayName,
       trabajadorId: item.trabajadorId,
       franquicia: item.franquicia?.nombre ?? "",
       codigo: item.franquicia?.codigo ?? null,
-      saldoInicial: item.saldoInicial,
-      saldoSistema,
-      saldoDeclarado,
-      difference,
+      capitalPropio: item.capitalPropio,
+      ventasTotal: item.ventasTotal,
+      pagosTotal: item.pagosTotal,
+      saldoDisponible,
+      liquidacionTipo: item.liquidacionTipo ?? liquidacion.tipo,
+      liquidacionMonto: item.liquidacionMonto ?? liquidacion.monto,
     };
   });
 
@@ -205,12 +232,12 @@ export default async function DashboardPage() {
     .sort((a, b) => b.progress - a.progress);
 
   const negativeSessionItems: ListItem[] = normalizedSessions
-    .filter((item) => item.saldoSistema < 0)
+    .filter((item) => item.saldoDisponible < 0)
     .map((item) => ({
       id: item.id,
       title: item.trabajador,
       subtitle: item.codigo ? `${item.franquicia} (${item.codigo})` : item.franquicia,
-      meta: `-$${formatCurrency(Math.abs(item.saldoSistema))} USD`,
+      meta: `-$${formatCurrency(Math.abs(item.saldoDisponible))} USD`,
       tone: "negative" as const,
     }));
 
@@ -264,13 +291,17 @@ export default async function DashboardPage() {
   ];
 
   const workerMetrics: MetricItem[] = [
-    { label: "Tickets hoy", value: ticketsToday.toLocaleString() },
-    { label: "Pagos hoy", value: paymentsToday.toLocaleString() },
+    { label: "Ventas del dia", value: `$${formatCurrency(myOpenSession?.ventasTotal ?? 0)}` },
+    { label: "Pagos del dia", value: `$${formatCurrency(myOpenSession?.pagosTotal ?? 0)}` },
     {
-      label: "Ganadores pendientes",
-      value: pendingWinnersCount.toLocaleString(),
-      tone: pendingWinnersCount > 0 ? "warning" : undefined,
-      hint: pendingWinnersCount > 0 ? "Revisa pagos pendientes en la secciÃ³n Pagos." : undefined,
+      label: "Saldo disponible",
+      value: `$${formatCurrency(myOpenSession ? myOpenSession.capitalPropio + myOpenSession.ventasTotal - myOpenSession.pagosTotal : 0)}`,
+      tone:
+        !myOpenSession
+          ? undefined
+          : myOpenSession.capitalPropio + myOpenSession.ventasTotal - myOpenSession.pagosTotal < 0
+            ? "warning"
+            : "positive",
     },
   ];
 
@@ -285,7 +316,8 @@ export default async function DashboardPage() {
     { label: "Mercados abiertos", value: activeMarkets.length.toLocaleString() },
   ];
 
-  const workerDifference = describeWorkerDifference(myOpenSession?.difference ?? null);
+  const workerDifference = myOpenSession    ? describeWorkerDifference(myOpenSession.capitalPropio, myOpenSession.ventasTotal, myOpenSession.pagosTotal)
+    : null;
 
   const layout = (() => {
     if (session.role === UserRole.TRABAJADOR) {
@@ -295,36 +327,37 @@ export default async function DashboardPage() {
             <MetricsGrid metrics={workerMetrics} columnsClassName="sm:grid-cols-3" />
           </DashboardWidget>
 
-          <DashboardWidget title="Tu caja" description="Capital inicial, saldo del sistema y cierre declarado">
+          <DashboardWidget title="Tu caja" description="Capital propio, ventas y pagos del turno">
             {myOpenSession ? (
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
-                  <p className="text-muted-foreground">Capital inicial</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">${formatCurrency(myOpenSession.saldoInicial)}</p>
+                  <p className="text-muted-foreground">Capital propio</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">${formatCurrency(myOpenSession.capitalPropio)}</p>
                 </div>
                 <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
-                  <p className="text-muted-foreground">Saldo sistema</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">${formatCurrency(myOpenSession.saldoSistema)}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Resultado neto de movimientos.</p>
+                  <p className="text-muted-foreground">Ventas del d�a</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">${formatCurrency(myOpenSession.ventasTotal)}</p>
                 </div>
                 <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
-                  <p className="text-muted-foreground">Saldo declarado</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">
-                    {myOpenSession.saldoDeclarado !== null ? `$${formatCurrency(myOpenSession.saldoDeclarado)}` : "Pendiente"}
-                  </p>
-                  {myOpenSession.saldoDeclarado === null ? (
-                    <p className="mt-1 text-xs text-muted-foreground">Declara el efectivo al solicitar cierre.</p>
-                  ) : null}
+                  <p className="text-muted-foreground">Pagos del d�a</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">${formatCurrency(myOpenSession.pagosTotal)}</p>
                 </div>
                 <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
-                  <p className="text-muted-foreground">Resultado</p>
-                  <p className={`mt-2 text-xl font-semibold ${workerDifference.toneClass}`}>{workerDifference.text}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{workerDifference.hint}</p>
+                  <p className="text-muted-foreground">Saldo disponible</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">${formatCurrency(myOpenSession.saldoDisponible)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Capital propio + ventas - pagos registrados.</p>
                 </div>
+                {workerDifference ? (
+                  <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
+                    <p className="text-muted-foreground">Liquidaci�n estimada</p>
+                    <p className={`mt-2 text-xl font-semibold ${workerDifference.toneClass}`}>{workerDifference.text}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{workerDifference.hint}</p>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No tienes una caja abierta. Abre una nueva caja desde la secciÃ³n Caja para iniciar tu turno.
+                No tienes una caja abierta. Abre una nueva caja desde la secci�n Caja para iniciar tu turno.
               </p>
             )}
           </DashboardWidget>
