@@ -1,5 +1,6 @@
-"use client";
+﻿"use client";
 
+import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
@@ -13,6 +14,75 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+
+type Tone = "positive" | "negative" | "warning" | "neutral";
+
+const VALUE_TONE_CLASSES: Record<Tone, string> = {
+  positive: "text-emerald-300",
+  negative: "text-red-400",
+  warning: "text-amber-300",
+  neutral: "text-foreground",
+};
+
+const formatCurrency = (value: number) =>
+  value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+function summarizeWorkerDifference(diff: number | null): { label: string; tone: Tone; hint?: string } {
+  if (diff === null) {
+    return {
+      label: "Pendiente de conciliaciÃ³n",
+      tone: "warning",
+      hint: "Declara el saldo final para solicitar el cierre.",
+    };
+  }
+  if (diff === 0) {
+    return {
+      label: "Cuadre exacto",
+      tone: "positive",
+      hint: "No hay diferencias frente al sistema.",
+    };
+  }
+  if (diff > 0) {
+    return {
+      label: `Debes entregar $${formatCurrency(diff)}`,
+      tone: "negative",
+      hint: "Entrega el excedente a central durante el cierre.",
+    };
+  }
+  return {
+    label: `Sistema te debe $${formatCurrency(Math.abs(diff))}`,
+    tone: "warning",
+    hint: "Coordina el ajuste con Admin antes de cerrar.",
+  };
+}
+
+function summarizeAdminDifference(diff: number): { label: string; tone: Tone } {
+  if (diff === 0) {
+    return { label: "Cuadre exacto", tone: "neutral" };
+  }
+  if (diff > 0) {
+    return { label: `Recibir $${formatCurrency(diff)}`, tone: "positive" };
+  }
+  return { label: `Entregar $${formatCurrency(Math.abs(diff))}`, tone: "warning" };
+}
+
+type SummaryCardProps = {
+  label: string;
+  value: ReactNode;
+  tone?: Tone;
+  hint?: string;
+  className?: string;
+};
+
+function SummaryCard({ label, value, tone = "neutral", hint, className }: SummaryCardProps) {
+  return (
+    <div className={cn("rounded-lg border border-border/30 bg-background/60 p-4 text-sm", className)}>
+      <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
+      <p className={cn("mt-2 text-lg font-semibold", VALUE_TONE_CLASSES[tone])}>{value}</p>
+      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
+  );
+}
 
 type CashMovement = {
   id: string;
@@ -37,6 +107,7 @@ type PendingSession = {
   id: string;
   trabajador: string;
   franquiciaNombre: string;
+  saldoInicial: number;
   saldoDeclarado: number;
   saldoSistema: number;
   diferencia: number | null;
@@ -72,13 +143,24 @@ export function CashManager({ data }: CashManagerProps) {
   const router = useRouter();
 
   const [openAmount, setOpenAmount] = useState("0");
-  const [closeAmount, setCloseAmount] = useState(() => (session?.saldoSistema ?? 0).toString());
+  const [closeAmount, setCloseAmount] = useState(() => {
+    if (!session) return "0";
+    const base = session.saldoDeclarado ?? session.saldoSistema;
+    return base.toString();
+  });
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [message, setMessage] = useState<MessageState | null>(null);
   const [isPending, startTransition] = useTransition();
   const [selectedFranquiciaId, setSelectedFranquiciaId] = useState(
     defaultFranquiciaId ?? (franquicias[0]?.id ?? ""),
   );
+
+  useEffect(() => {
+    if (session) {
+      const base = session.saldoDeclarado ?? session.saldoSistema;
+      setCloseAmount(base.toString());
+    }
+  }, [session?.id, session?.saldoDeclarado, session?.saldoSistema]);
 
   useEffect(() => {
     if (defaultFranquiciaId) {
@@ -143,16 +225,15 @@ export function CashManager({ data }: CashManagerProps) {
           .slice()
           .reverse()
           .map((movimiento) => (
-            <div key={movimiento.id} className="flex items-center justify-between rounded border border-border/20 px-3 py-2 text-sm">
+            <div
+              key={movimiento.id}
+              className="flex items-center justify-between rounded border border-border/20 px-3 py-2 text-sm"
+            >
               <span>
                 {movimiento.tipo} - {new Date(movimiento.createdAt).toLocaleString()}
                 {movimiento.notas ? ` - ${movimiento.notas}` : ""}
               </span>
-              <span
-                className={cn(
-                  movimiento.tipo === "EGRESO" ? "text-rose-300" : "text-emerald-300",
-                )}
-              >
+              <span className={cn(movimiento.tipo === "EGRESO" ? "text-rose-300" : "text-emerald-300")}>
                 {movimiento.tipo === "EGRESO" ? "-" : "+"}
                 {movimiento.monto.toLocaleString()} USD
               </span>
@@ -161,6 +242,23 @@ export function CashManager({ data }: CashManagerProps) {
       )}
     </div>
   );
+
+  const sessionDifference = session
+    ? session.diferencia ?? (session.saldoDeclarado !== null ? session.saldoDeclarado - session.saldoSistema : null)
+    : null;
+  const workerSummary = summarizeWorkerDifference(sessionDifference);
+
+  const pendingSummaries = pendingSessions.map((item) => {
+    const difference = item.diferencia ?? item.saldoDeclarado - item.saldoSistema;
+    return {
+      ...item,
+      difference,
+      summary: summarizeAdminDifference(difference),
+    };
+  });
+
+  const totalAdminDiff = pendingSummaries.reduce((acc, item) => acc + item.difference, 0);
+  const totalSummary = summarizeAdminDifference(totalAdminDiff);
 
   return (
     <div className="space-y-6">
@@ -232,19 +330,35 @@ export function CashManager({ data }: CashManagerProps) {
             </form>
           ) : (
             <div className="space-y-4">
-              <div className="grid gap-2 text-sm text-muted-foreground">
-                <div>
-                  Estado: <span className="text-foreground font-medium">{session.estado}</span>
-                </div>
-                <div>Franquicia: {session.franquiciaNombre || "Sin asignar"}</div>
-                <div>Saldo inicial: {session.saldoInicial.toLocaleString()} USD</div>
-                <div>Saldo sistema: {session.saldoSistema.toLocaleString()} USD</div>
-                {session.saldoDeclarado !== null ? (
-                  <div>Saldo declarado: {session.saldoDeclarado.toLocaleString()} USD</div>
-                ) : null}
-                {session.diferencia !== null ? (
-                  <div>Diferencia: {session.diferencia.toLocaleString()} USD</div>
-                ) : null}
+              <div className="grid gap-3 lg:grid-cols-3">
+                <SummaryCard label="Estado" value={session.estado} />
+                <SummaryCard label="Franquicia" value={session.franquiciaNombre || "Sin asignar"} />
+                <SummaryCard label="Capital inicial" value={`$${formatCurrency(session.saldoInicial)}`} />
+                <SummaryCard
+                  label="Saldo sistema"
+                  value={`$${formatCurrency(session.saldoSistema)}`}
+                  hint="Resultado segun movimientos registrados."
+                />
+                <SummaryCard
+                  label="Saldo declarado"
+                  value={
+                    session.saldoDeclarado !== null
+                      ? `$${formatCurrency(session.saldoDeclarado)}`
+                      : "Pendiente"
+                  }
+                  tone={session.saldoDeclarado === null ? "warning" : "neutral"}
+                  hint={
+                    session.saldoDeclarado === null
+                      ? "Ingresa el monto contado para solicitar el cierre."
+                      : undefined
+                  }
+                />
+                <SummaryCard
+                  label="Resultado"
+                  value={workerSummary.label}
+                  tone={workerSummary.tone}
+                  hint={workerSummary.hint}
+                />
               </div>
 
               {session.estado === "ABIERTA" ? (
@@ -268,7 +382,7 @@ export function CashManager({ data }: CashManagerProps) {
                 </form>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Cierre solicitado. Espera la aprobacion del Administrador.
+                  Cierre solicitado. Espera la aprobaciÃ³n del Administrador.
                 </p>
               )}
 
@@ -287,31 +401,51 @@ export function CashManager({ data }: CashManagerProps) {
             <CardTitle>Solicitudes pendientes</CardTitle>
             <CardDescription>Aprueba los cierres de caja enviados por los vendedores.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {pendingSessions.length === 0 ? (
+          <CardContent className="space-y-4">
+            {pendingSummaries.length === 0 ? (
               <p className="text-sm text-muted-foreground">Sin solicitudes en espera.</p>
             ) : (
-              pendingSessions.map((item) => (
-                <div key={item.id} className="grid gap-2 rounded border border-border/40 bg-background/40 px-3 py-3 md:grid-cols-[1fr_auto] md:items-center">
-                  <div className="text-sm text-muted-foreground">
-                    <div className="text-foreground font-medium">{item.trabajador}</div>
-                    <div>Franquicia: {item.franquiciaNombre || "Sin asignar"}</div>
-                    <div>Saldo sistema: {item.saldoSistema.toLocaleString()} USD</div>
-                    <div>Saldo declarado: {item.saldoDeclarado.toLocaleString()} USD</div>
-                    <div>Diferencia: {(item.diferencia ?? 0).toLocaleString()} USD</div>
+              <>
+                {pendingSummaries.map((item) => (
+                  <div key={item.id} className="space-y-3 rounded border border-border/40 bg-background/40 p-3">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="text-sm font-semibold text-foreground">{item.trabajador}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.franquiciaNombre || "Sin asignar"}
+                      </p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                      <SummaryCard label="Capital inicial" value={`$${formatCurrency(item.saldoInicial)}`} />
+                      <SummaryCard label="Saldo sistema" value={`$${formatCurrency(item.saldoSistema)}`} />
+                      <SummaryCard label="Saldo declarado" value={`$${formatCurrency(item.saldoDeclarado)}`} />
+                      <SummaryCard
+                        label="Resultado"
+                        value={item.summary.label}
+                        tone={item.summary.tone}
+                        hint="Conciliar este monto antes de aprobar."
+                      />
+                    </div>
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => handleApprove(item.id)}
+                        disabled={isPending || pendingId === item.id}
+                      >
+                        {pendingId === item.id ? "Aprobando..." : "Aprobar"}
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => handleApprove(item.id)}
-                      disabled={isPending || pendingId === item.id}
-                    >
-                      {pendingId === item.id ? "Aprobando..." : "Aprobar"}
-                    </Button>
-                  </div>
-                </div>
-              ))
+                ))}
+
+                <SummaryCard
+                  label="Resumen general"
+                  value={totalSummary.label}
+                  tone={totalSummary.tone}
+                  hint="Usa este monto para conciliar y reiniciar las cajas aprobadas."
+                  className="border-border/40 bg-background/40"
+                />
+              </>
             )}
           </CardContent>
         </Card>
@@ -319,3 +453,9 @@ export function CashManager({ data }: CashManagerProps) {
     </div>
   );
 }
+
+
+
+
+
+

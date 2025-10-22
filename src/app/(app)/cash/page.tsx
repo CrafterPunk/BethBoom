@@ -1,4 +1,4 @@
-import {
+﻿import {
   CajaMovimientoTipo,
   CajaSesionEstado,
   UserRole,
@@ -106,6 +106,7 @@ export default async function CashPage() {
     saldoDeclarado: item.saldoDeclarado ?? 0,
     saldoSistema: computeSaldoSistema(item.movimientos),
     diferencia: item.diferencia ?? null,
+    saldoInicial: item.saldoInicial,
   }));
 
   return (
@@ -122,3 +123,5 @@ export default async function CashPage() {
     />
   );
 }
+
+

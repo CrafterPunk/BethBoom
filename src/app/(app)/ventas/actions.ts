@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -15,6 +15,7 @@ import {
 import { requireSession } from "@/lib/auth/session";
 import { isAmountWithinRank } from "@/lib/business/ranks";
 import prisma from "@/lib/prisma";
+import { buildAppEvent, emitAppEvent } from "@/lib/events";
 import {
   applyDeltaCap,
   calculateSesgo,
@@ -295,7 +296,8 @@ export async function createTicketAction(input: unknown): Promise<TicketActionRe
 
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
+    const { result, oddsNotification } = await prisma.$transaction(async (tx) => {
+      let notification: { marketId: string; marketName: string } | null = null;
       const freshMarket = await tx.mercado.findUnique({
         where: { id: marketId },
         include: { opciones: true },
@@ -327,6 +329,10 @@ export async function createTicketAction(input: unknown): Promise<TicketActionRe
       }
 
       const freshEvaluation = evaluateOddsRecalc(freshMarket, optionId, monto);
+      if (freshEvaluation.triggered) {
+        notification = { marketId: freshMarket.id, marketName: freshMarket.nombre };
+      }
+
       if (requiresConfirmation && !compareUpdates(freshEvaluation.updates, evaluation.updates)) {
         throw new Error("ODDS_CHANGED");
       }
@@ -430,33 +436,58 @@ export async function createTicketAction(input: unknown): Promise<TicketActionRe
         },
       });
 
-      const promotionCycles = promotionThreshold > 0 ? Math.floor((apostador.apuestasAcumuladas + 1) / promotionThreshold) : 0;
+      const shouldAutoPromote = apostador.promocionAutomatica;
       let nextRankId = apostador.rangoId;
-      let remainingApuestas = promotionThreshold > 0 ? (apostador.apuestasAcumuladas + 1) % promotionThreshold : apostador.apuestasAcumuladas + 1;
+      let promotionTriggered = false;
+      let remainingApuestas = apostador.apuestasAcumuladas + 1;
 
-      if (promotionCycles > 0) {
-        const currentIndex = rankRules.findIndex((rule) => rule.id === apostador.rangoId);
-        let targetIndex = currentIndex;
-        for (let i = 0; i < promotionCycles; i += 1) {
-          if (targetIndex + 1 < rankRules.length) {
-            targetIndex += 1;
-            remainingApuestas = promotionThreshold > 0 ? 0 : remainingApuestas;
+      if (shouldAutoPromote) {
+        const promotionCycles = promotionThreshold > 0 ? Math.floor((apostador.apuestasAcumuladas + 1) / promotionThreshold) : 0;
+        remainingApuestas = promotionThreshold > 0 ? (apostador.apuestasAcumuladas + 1) % promotionThreshold : apostador.apuestasAcumuladas + 1;
+
+        if (promotionCycles > 0) {
+          const currentIndex = rankRules.findIndex((rule) => rule.id === apostador.rangoId);
+          let targetIndex = currentIndex;
+          for (let i = 0; i < promotionCycles; i += 1) {
+            if (targetIndex + 1 < rankRules.length) {
+              targetIndex += 1;
+              remainingApuestas = promotionThreshold > 0 ? 0 : remainingApuestas;
+            }
+          }
+          const candidateRankId = rankRules[targetIndex]?.id ?? apostador.rangoId;
+          if (candidateRankId !== apostador.rangoId) {
+            nextRankId = candidateRankId;
+            promotionTriggered = true;
           }
         }
-        nextRankId = rankRules[targetIndex]?.id ?? apostador.rangoId;
       }
 
       const updatedApostador = await tx.apostador.update({
         where: { id: apostador.id },
         data: {
           apuestasTotal: { increment: 1 },
-          apuestasAcumuladas: promotionThreshold > 0 ? remainingApuestas : apostador.apuestasAcumuladas + 1,
+          apuestasAcumuladas: shouldAutoPromote
+            ? remainingApuestas
+            : apostador.apuestasAcumuladas + 1,
           rangoId: nextRankId,
+          ...(shouldAutoPromote ? { rangoManualId: null } : {}),
         },
         include: { rango: true },
       });
 
-      if (updatedApostador.rangoId !== apostador.rangoId) {
+      if (promotionTriggered) {
+        await tx.apostadorPromocionHistorial.create({
+          data: {
+            apostadorId: apostador.id,
+            rangoAnteriorId: apostador.rangoId,
+            rangoAnteriorNombre: apostador.rango?.nombre ?? rankMap.get(apostador.rangoId)?.nombre ?? null,
+            rangoNuevoId: updatedApostador.rangoId,
+            rangoNuevoNombre: updatedApostador.rango?.nombre ?? rankMap.get(updatedApostador.rangoId)?.nombre ?? "",
+            motivo: "auto_promotion",
+            triggeredById: session.userId,
+          },
+        });
+
         await tx.auditLog.create({
           data: {
             actorId: session.userId,
@@ -525,11 +556,24 @@ export async function createTicketAction(input: unknown): Promise<TicketActionRe
       });
 
       return {
-        ticket,
-        cuotaTicket,
-        apostador: updatedApostador,
+        result: {
+          ticket,
+          cuotaTicket,
+          apostador: updatedApostador,
+        },
+        oddsNotification: notification,
       };
     });
+
+    if (oddsNotification) {
+      emitAppEvent(
+        buildAppEvent({
+          type: "MARKET_ODDS_THRESHOLD",
+          message: `Mercado ${oddsNotification.marketName} recalculo cuotas automaticamente`,
+          payload: { marketId: oddsNotification.marketId },
+        }),
+      );
+    }
 
     revalidatePath("/ventas");
     revalidatePath("/markets");
@@ -597,6 +641,11 @@ export async function createTicketAction(input: unknown): Promise<TicketActionRe
     return { status: "error", message: "No se pudo registrar el ticket" } satisfies TicketError;
   }
 }
+
+
+
+
+
 
 
 

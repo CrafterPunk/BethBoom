@@ -1,5 +1,6 @@
-﻿"use server";
+"use server";
 
+import { buildAppEvent, emitAppEvent } from "@/lib/events";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
@@ -126,6 +127,7 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
     return { ok: false, message: "Solicitud invalida" };
   }
 
+
   try {
     await prisma.$transaction(async (tx) => {
       const cajaSesion = await tx.cajaSesion.findFirst({
@@ -187,6 +189,15 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
     return { ok: false, message: "No se pudo solicitar el cierre" };
   }
 
+  emitAppEvent(
+    buildAppEvent({
+      type: "CASH_CLOSE_REQUESTED",
+      message: `Cierre solicitado por ${session.displayName}`,
+      payload: { saldoDeclarado: parsed.data.saldoDeclarado },
+    }),
+);
+
+
   revalidatePath("/cash");
   return { ok: true, message: "Cierre solicitado" };
 }
@@ -201,6 +212,8 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
   if (!parsed.success) {
     return { ok: false, message: "Solicitud invalida" };
   }
+
+  let declaredSaldo = 0;
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -234,6 +247,7 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
           cerradoAt: new Date(),
         },
       });
+      declaredSaldo = cajaSesion.saldoDeclarado ?? 0;
 
       await tx.auditLog.create({
         data: {
@@ -260,6 +274,18 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
     return { ok: false, message: "No se pudo aprobar el cierre" };
   }
 
+  emitAppEvent(
+    buildAppEvent({
+      type: "CASH_CLOSE_REQUESTED",
+      message: `Cierre solicitado por ${session.displayName}`,
+      payload: { saldoDeclarado: declaredSaldo },
+    }),
+  );
+
   revalidatePath("/cash");
   return { ok: true, message: "Caja cerrada" };
 }
+
+
+
+

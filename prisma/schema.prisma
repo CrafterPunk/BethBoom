@@ -96,6 +96,9 @@ model User {
   cajaSesiones           CajaSesion[]
   cajaSesionesAprobadas  CajaSesion[]     @relation("CajaSesionAprobador")
   Mercado                Mercado[]
+  apostadorNotas         ApostadorNota[]
+  apostadorTagAssignments ApostadorTagAssignment[]
+  apostadorPromociones   ApostadorPromocionHistorial[]
 }
 
 model Mercado {
@@ -150,8 +153,14 @@ model Apostador {
   rango              RankRegla @relation(fields: [rangoId], references: [id])
   apuestasTotal      Int       @default(0)
   apuestasAcumuladas Int       @default(0)
+  promocionAutomatica Boolean   @default(true)
+  rangoManualId       String?
+  rangoManual         RankRegla? @relation("ManualRank", fields: [rangoManualId], references: [id])
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+  notas               ApostadorNota[]
+  etiquetas           ApostadorTagAssignment[]
+  promociones         ApostadorPromocionHistorial[]
   tickets            Ticket[]
 }
 
@@ -166,8 +175,56 @@ model RankRegla {
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
   apostadores           Apostador[]
+  apostadoresManual     Apostador[] @relation("ManualRank")
 }
 
+model ApostadorNota {
+  id          String   @id @default(uuid())
+  apostadorId String
+  apostador   Apostador @relation(fields: [apostadorId], references: [id], onDelete: Cascade)
+  contenido   String
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model ApostadorTag {
+  id          String   @id @default(uuid())
+  nombre      String   @unique
+  color       String   @default("#a855f7")
+  descripcion String?
+  activa      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  asignaciones ApostadorTagAssignment[]
+}
+
+model ApostadorTagAssignment {
+  id           String       @id @default(uuid())
+  apostadorId  String
+  tagId        String
+  createdById  String?
+  createdBy    User?        @relation(fields: [createdById], references: [id])
+  createdAt    DateTime     @default(now())
+  apostador    Apostador    @relation(fields: [apostadorId], references: [id], onDelete: Cascade)
+  tag          ApostadorTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([apostadorId, tagId])
+}
+
+model ApostadorPromocionHistorial {
+  id                  String   @id @default(uuid())
+  apostadorId         String
+  apostador           Apostador @relation(fields: [apostadorId], references: [id], onDelete: Cascade)
+  rangoAnteriorId     String?
+  rangoAnteriorNombre String?
+  rangoNuevoId        String
+  rangoNuevoNombre    String
+  motivo              String?
+  triggeredById       String?
+  triggeredBy         User?    @relation(fields: [triggeredById], references: [id])
+  createdAt           DateTime @default(now())
+}
 model Ticket {
   id                       String       @id @default(uuid())
   codigo                   String       @unique
@@ -292,3 +349,8 @@ model CajaSesion {
   @@index([estado])
   @@index([trabajadorId, estado])
 }
+
+
+
+
+

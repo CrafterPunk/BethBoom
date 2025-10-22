@@ -17,6 +17,12 @@ const RANKS: Array<{ orden: number; nombre: string; maxMonto: number }> = [
   { orden: 5, nombre: "Super VIP", maxMonto: 250_000 },
 ];
 
+const TAGS: Array<{ nombre: string; color: string; descripcion?: string }> = [
+  { nombre: "VIP", color: "#f97316", descripcion: "Clientes VIP con beneficios especiales" },
+  { nombre: "Seguimiento", color: "#facc15", descripcion: "Requiere seguimiento manual" },
+  { nombre: "Bloqueo Parcial", color: "#ef4444", descripcion: "Validar identidad antes de vender" },
+];
+
 const GLOBAL_PARAMS: Array<{ clave: string; valor: Prisma.InputJsonValue; descripcion?: string }> = [
   {
     clave: "fee_pct_default",
@@ -85,6 +91,24 @@ async function seedRanks() {
   }
 }
 
+async function seedTags() {
+  for (const tag of TAGS) {
+    await prisma.apostadorTag.upsert({
+      where: { nombre: tag.nombre },
+      update: {
+        color: tag.color,
+        descripcion: tag.descripcion,
+        activa: true,
+      },
+      create: {
+        nombre: tag.nombre,
+        color: tag.color,
+        descripcion: tag.descripcion,
+      },
+    });
+  }
+}
+
 async function seedParametros() {
   for (const param of GLOBAL_PARAMS) {
     await prisma.parametroGlobal.upsert({
@@ -137,6 +161,7 @@ async function seedUsers(franquiciaId: string) {
 async function main() {
   const franquiciaHQ = await seedFranquiciaHQ();
   await seedRanks();
+  await seedTags();
   await seedParametros();
   await seedUsers(franquiciaHQ.id);
 }
@@ -150,4 +175,3 @@ main()
     await prisma.$disconnect();
     process.exit(1);
   });
-

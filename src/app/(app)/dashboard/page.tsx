@@ -1,14 +1,16 @@
-﻿import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
+﻿import {
   CajaMovimientoTipo,
   CajaSesionEstado,
   MercadoEstado,
   MercadoTipo,
   TicketEstado,
+  UserRole,
 } from "@prisma/client";
 
 import { requireSession } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";
+import { DashboardWidget, MetricsGrid, SimpleList } from "./widgets";
+import type { MetricItem, ListItem } from "./widgets";
 
 function computeSaldoSistema(movimientos: Array<{ tipo: CajaMovimientoTipo; monto: number }>) {
   return movimientos.reduce((sum, movimiento) => {
@@ -33,8 +35,55 @@ function formatPercent(value: number) {
 
 async function getPromotionThreshold() {
   const param = await prisma.parametroGlobal.findUnique({ where: { clave: "promocion_apuestas" } });
-  const value = typeof param?.valor === "object" && param?.valor !== null ? (param.valor as { conteo?: number }).conteo : undefined;
+  const value =
+    typeof param?.valor === "object" && param?.valor !== null ? (param.valor as { conteo?: number }).conteo : undefined;
   return value ?? 30;
+}
+
+const ROLE_SUBTITLE: Record<UserRole, string> = {
+  [UserRole.ADMIN_GENERAL]: "Vista global del negocio.",
+  [UserRole.TRABAJADOR]: "Resumen operativo para tu turno.",
+  [UserRole.AUDITOR_GENERAL]: "Monitoreo de operaciones y alertas.",
+  [UserRole.AUDITOR_FRANQUICIA]: "Actividad de la franquicia asignada.",
+};
+
+function describeWorkerDifference(diff: number | null) {
+  if (diff === null) {
+    return {
+      text: "Pendiente de conciliaciÃ³n",
+      toneClass: "text-amber-300",
+      hint: "Declara el saldo final para solicitar el cierre.",
+    };
+  }
+  if (diff === 0) {
+    return {
+      text: "Cuadre exacto",
+      toneClass: "text-emerald-300",
+      hint: "No hay diferencias con el sistema.",
+    };
+  }
+  if (diff > 0) {
+    return {
+      text: `Debes entregar $${formatCurrency(diff)}`,
+      toneClass: "text-red-400",
+      hint: "Entrega el excedente a central al cerrar.",
+    };
+  }
+  return {
+    text: `Sistema te debe $${formatCurrency(Math.abs(diff))}`,
+    toneClass: "text-amber-300",
+    hint: "Registra el ajuste con Admin antes de finalizar.",
+  };
+}
+
+function describeAdminDifference(diff: number) {
+  if (diff === 0) {
+    return { label: "Cuadre exacto", tone: undefined } as const;
+  }
+  if (diff > 0) {
+    return { label: `Recibir $${formatCurrency(diff)}`, tone: "positive" as const };
+  }
+  return { label: `Entregar $${formatCurrency(Math.abs(diff))}`, tone: "warning" as const };
 }
 
 export default async function DashboardPage() {
@@ -50,7 +99,7 @@ export default async function DashboardPage() {
     paymentsToday,
     activeMarkets,
     pendingTicketCandidates,
-    openSessions,
+    openSessionsRaw,
     promotionEvery,
     upcomingApostadores,
   ] = await Promise.all([
@@ -117,8 +166,29 @@ export default async function DashboardPage() {
   const holdPct = handleTotal > 0 ? ((handleTotal - payoutTotal) / handleTotal) * 100 : 0;
   const totalTickets = ticketsAgg._count._all ?? 0;
 
-  const pendingWinnersCount = pendingTicketCandidates.filter((ticket) => ticket.mercado.ganadoraId === ticket.opcionId).length;
-  const openCashCount = openSessions.length;
+  const pendingWinnersCount = pendingTicketCandidates.filter(
+    (ticket) => ticket.mercado.ganadoraId === ticket.opcionId,
+  ).length;
+
+  const normalizedSessions = openSessionsRaw.map((item) => {
+    const saldoSistema = computeSaldoSistema(item.movimientos);
+    const saldoDeclarado = item.saldoDeclarado ?? null;
+    const difference = item.diferencia ?? (saldoDeclarado !== null ? saldoDeclarado - saldoSistema : null);
+    return {
+      id: item.id,
+      trabajador: item.trabajador.displayName,
+      trabajadorId: item.trabajadorId,
+      franquicia: item.franquicia?.nombre ?? "",
+      codigo: item.franquicia?.codigo ?? null,
+      saldoInicial: item.saldoInicial,
+      saldoSistema,
+      saldoDeclarado,
+      difference,
+    };
+  });
+
+  const openCashCount = normalizedSessions.length;
+  const myOpenSession = normalizedSessions.find((item) => item.trabajadorId === session.userId) ?? null;
 
   const oddsAlerts = activeMarkets
     .filter((market) => market.tipo === MercadoTipo.ODDS && market.umbralRecalcMonto > 0)
@@ -132,24 +202,25 @@ export default async function DashboardPage() {
         umbral: market.umbralRecalcMonto,
       };
     })
-    .filter((item) => item.progress >= 0.8)
-    .sort((a, b) => b.progress - a.progress)
-    .slice(0, 6);
+    .sort((a, b) => b.progress - a.progress);
 
-  const negativeSessions = openSessions
-    .map((session) => {
-      const saldo = computeSaldoSistema(session.movimientos);
-      return {
-        id: session.id,
-        saldo,
-        trabajador: session.trabajador?.displayName ?? "Sin usuario",
-        franquicia: session.franquicia?.nombre ?? "Sin franquicia",
-        codigo: session.franquicia?.codigo ?? "",
-      };
-    })
-    .filter((item) => item.saldo < 0)
-    .sort((a, b) => a.saldo - b.saldo)
-    .slice(0, 6);
+  const negativeSessionItems: ListItem[] = normalizedSessions
+    .filter((item) => item.saldoSistema < 0)
+    .map((item) => ({
+      id: item.id,
+      title: item.trabajador,
+      subtitle: item.codigo ? `${item.franquicia} (${item.codigo})` : item.franquicia,
+      meta: `-$${formatCurrency(Math.abs(item.saldoSistema))} USD`,
+      tone: "negative" as const,
+    }));
+
+  const oddsAlertItems: ListItem[] = oddsAlerts.map((alert) => ({
+    id: alert.id,
+    title: alert.nombre,
+    subtitle: `${formatCurrency(alert.monto)} / ${formatCurrency(alert.umbral)} USD acumulado`,
+    meta: `${Math.round(alert.progress * 100)}%`,
+    tone: alert.progress >= 1 ? "warning" : undefined,
+  }));
 
   const upcomingPromotions = promotionEvery > 0
     ? upcomingApostadores
@@ -168,7 +239,15 @@ export default async function DashboardPage() {
         .slice(0, 6)
     : [];
 
-  const metricCards = [
+  const upcomingPromotionItems: ListItem[] = upcomingPromotions.map((apostador) => ({
+    id: apostador.id,
+    title: apostador.alias,
+    subtitle: `${apostador.rangoNombre || "Sin rango"} Â· ${apostador.apuestasAcumuladas.toLocaleString()} / ${promotionEvery.toLocaleString()} apuestas`,
+    meta: `Faltan ${apostador.remaining.toLocaleString()}`,
+    tone: "warning" as const,
+  }));
+
+  const ownerMetrics: MetricItem[] = [
     { label: "Handle acumulado", value: `$${formatCurrency(handleTotal)}` },
     { label: "Payouts", value: `$${formatCurrency(payoutTotal)}` },
     { label: "Hold", value: formatPercent(holdPct) },
@@ -176,106 +255,140 @@ export default async function DashboardPage() {
     { label: "Tickets hoy", value: ticketsToday.toLocaleString() },
     { label: "Pagos hoy", value: paymentsToday.toLocaleString() },
     { label: "Mercados abiertos", value: activeMarkets.length.toLocaleString() },
-    { label: "Ganadores pendientes", value: pendingWinnersCount.toLocaleString() },
+    {
+      label: "Ganadores pendientes",
+      value: pendingWinnersCount.toLocaleString(),
+      tone: pendingWinnersCount > 0 ? "warning" : undefined,
+    },
     { label: "Cajas abiertas", value: openCashCount.toLocaleString() },
   ];
+
+  const workerMetrics: MetricItem[] = [
+    { label: "Tickets hoy", value: ticketsToday.toLocaleString() },
+    { label: "Pagos hoy", value: paymentsToday.toLocaleString() },
+    {
+      label: "Ganadores pendientes",
+      value: pendingWinnersCount.toLocaleString(),
+      tone: pendingWinnersCount > 0 ? "warning" : undefined,
+      hint: pendingWinnersCount > 0 ? "Revisa pagos pendientes en la secciÃ³n Pagos." : undefined,
+    },
+  ];
+
+  const auditorMetrics: MetricItem[] = [
+    { label: "Hold", value: formatPercent(holdPct) },
+    {
+      label: "Ganadores pendientes",
+      value: pendingWinnersCount.toLocaleString(),
+      tone: pendingWinnersCount > 0 ? "warning" : undefined,
+    },
+    { label: "Cajas abiertas", value: openCashCount.toLocaleString() },
+    { label: "Mercados abiertos", value: activeMarkets.length.toLocaleString() },
+  ];
+
+  const workerDifference = describeWorkerDifference(myOpenSession?.difference ?? null);
+
+  const layout = (() => {
+    if (session.role === UserRole.TRABAJADOR) {
+      return (
+        <>
+          <DashboardWidget title="Tu resumen de hoy" description="Ventas y pagos registrados">
+            <MetricsGrid metrics={workerMetrics} columnsClassName="sm:grid-cols-3" />
+          </DashboardWidget>
+
+          <DashboardWidget title="Tu caja" description="Capital inicial, saldo del sistema y cierre declarado">
+            {myOpenSession ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
+                  <p className="text-muted-foreground">Capital inicial</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">${formatCurrency(myOpenSession.saldoInicial)}</p>
+                </div>
+                <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
+                  <p className="text-muted-foreground">Saldo sistema</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">${formatCurrency(myOpenSession.saldoSistema)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Resultado neto de movimientos.</p>
+                </div>
+                <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
+                  <p className="text-muted-foreground">Saldo declarado</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">
+                    {myOpenSession.saldoDeclarado !== null ? `$${formatCurrency(myOpenSession.saldoDeclarado)}` : "Pendiente"}
+                  </p>
+                  {myOpenSession.saldoDeclarado === null ? (
+                    <p className="mt-1 text-xs text-muted-foreground">Declara el efectivo al solicitar cierre.</p>
+                  ) : null}
+                </div>
+                <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
+                  <p className="text-muted-foreground">Resultado</p>
+                  <p className={`mt-2 text-xl font-semibold ${workerDifference.toneClass}`}>{workerDifference.text}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{workerDifference.hint}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No tienes una caja abierta. Abre una nueva caja desde la secciÃ³n Caja para iniciar tu turno.
+              </p>
+            )}
+          </DashboardWidget>
+
+          <DashboardWidget title="Alertas de mercados" description="Mercados cercanos a recÃ¡lculo de cuotas">
+            <SimpleList items={oddsAlertItems.slice(0, 4)} emptyMessage="Sin alertas por ahora." />
+          </DashboardWidget>
+        </>
+      );
+    }
+
+    if (session.role === UserRole.AUDITOR_GENERAL || session.role === UserRole.AUDITOR_FRANQUICIA) {
+      return (
+        <>
+          <DashboardWidget title="Indicadores clave" description="KPIs de control y seguimiento">
+            <MetricsGrid metrics={auditorMetrics} columnsClassName="sm:grid-cols-2 lg:grid-cols-4" />
+          </DashboardWidget>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <DashboardWidget title="Alertas ODDS" description="Mercados con acumulado cercano al umbral">
+              <SimpleList items={oddsAlertItems} emptyMessage="Sin alertas por ahora." />
+            </DashboardWidget>
+            <DashboardWidget title="Cajas en seguimiento" description="Sesiones abiertas con saldo negativo">
+              <SimpleList items={negativeSessionItems} emptyMessage="No hay cajas en negativo." />
+            </DashboardWidget>
+          </div>
+
+          <DashboardWidget title="PrÃ³ximos ascensos" description="Apostadores prÃ³ximos al cambio de rango">
+            <SimpleList items={upcomingPromotionItems} emptyMessage="No hay apostadores cercanos al ascenso." />
+          </DashboardWidget>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <DashboardWidget title="Indicadores generales" description="Estado actual de ventas, pagos y actividad">
+          <MetricsGrid metrics={ownerMetrics} />
+        </DashboardWidget>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <DashboardWidget title="Alertas ODDS" description="Mercados con acumulado cercano al umbral de recÃ¡lculo">
+            <SimpleList items={oddsAlertItems} emptyMessage="Sin alertas por ahora." />
+          </DashboardWidget>
+          <DashboardWidget title="Cajas en seguimiento" description="Sesiones abiertas con saldo negativo">
+            <SimpleList items={negativeSessionItems} emptyMessage="No hay cajas en negativo." />
+          </DashboardWidget>
+        </div>
+
+        <DashboardWidget title="PrÃ³ximos ascensos" description="Apostadores cerca del lÃ­mite de promociÃ³n">
+          <SimpleList items={upcomingPromotionItems} emptyMessage="No hay apostadores cercanos al ascenso." />
+        </DashboardWidget>
+      </>
+    );
+  })();
 
   return (
     <section className="space-y-8 py-8">
       <div>
         <h1 className="text-2xl font-semibold text-foreground">Bienvenido, {session.displayName}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Resumen operativo y alertas del dia.</p>
+        <p className="mt-2 text-sm text-muted-foreground">{ROLE_SUBTITLE[session.role]}</p>
       </div>
 
-      <Card className="border-border/60 bg-card/80">
-        <CardHeader>
-          <CardTitle>Indicadores generales</CardTitle>
-          <CardDescription>Estado actual de ventas, pagos y actividad.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {metricCards.map((metric) => (
-              <div key={metric.label} className="rounded-lg border border-border/30 bg-background/60 p-4">
-                <p className="text-sm text-muted-foreground">{metric.label}</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{metric.value}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="border-border/60 bg-card/80">
-          <CardHeader>
-            <CardTitle>Alertas ODDS</CardTitle>
-            <CardDescription>Mercados con acumulado cercano al umbral de recalc.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {oddsAlerts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sin alertas por ahora.</p>
-            ) : (
-              oddsAlerts.map((alert) => (
-                <div key={alert.id} className="rounded border border-border/40 bg-background/60 p-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold text-foreground">{alert.nombre}</p>
-                    <span className="text-xs text-muted-foreground">{Math.round(alert.progress * 100)}%</span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {alert.monto.toLocaleString()} / {alert.umbral.toLocaleString()} USD acumulado
-                  </p>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/60 bg-card/80">
-          <CardHeader>
-            <CardTitle>Cajas en seguimiento</CardTitle>
-            <CardDescription>Sesiones abiertas con saldo negativo.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {negativeSessions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No hay cajas en negativo.</p>
-            ) : (
-              negativeSessions.map((item) => (
-                <div key={item.id} className="rounded border border-border/40 bg-background/60 p-3 text-sm">
-                  <p className="font-semibold text-foreground">{item.trabajador}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {item.franquicia}
-                    {item.codigo ? ` (${item.codigo})` : ""}
-                  </p>
-                  <p className="mt-1 text-xs text-destructive">Saldo: -${Math.abs(item.saldo).toLocaleString()}</p>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="border-border/60 bg-card/80">
-        <CardHeader>
-          <CardTitle>Proximos ascensos</CardTitle>
-          <CardDescription>Apostadores cerca del limite de promocion.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {upcomingPromotions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No hay apostadores cercanos al ascenso.</p>
-          ) : (
-            upcomingPromotions.map((apostador) => (
-              <div key={apostador.id} className="rounded border border-border/30 bg-background/60 p-4 text-sm">
-                <p className="font-semibold text-foreground">{apostador.alias}</p>
-                <p className="text-xs text-muted-foreground">{apostador.rangoNombre || "Sin rango"}</p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Apuestas acumuladas: {apostador.apuestasAcumuladas.toLocaleString()} / {promotionEvery.toLocaleString()}
-                </p>
-                <p className="text-xs text-muted-foreground">Total historial: {apostador.apuestasTotal.toLocaleString()}</p>
-                <p className="mt-2 text-xs font-semibold text-amber-300">Faltan {apostador.remaining.toLocaleString()} apuestas</p>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+      {layout}
     </section>
   );
 }

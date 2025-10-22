@@ -1,23 +1,60 @@
-﻿"use client";
+"use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-import { adjustApostadorRankAction } from "./actions";
+import {
+  addApostadorNoteAction,
+  assignApostadorTagAction,
+  createApostadorTagAction,
+  removeApostadorTagAction,
+  setApostadorAutoModeAction,
+  setApostadorRankAction,
+} from "./actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
+type ApostadorNote = {
+  id: string;
+  contenido: string;
+  createdAt: string;
+  autor: string;
+};
+
+type ApostadorTag = {
+  assignmentId: string;
+  tagId: string;
+  nombre: string;
+  color: string;
+};
+
+type ApostadorPromotion = {
+  id: string;
+  rangoAnteriorNombre: string | null;
+  rangoNuevoNombre: string;
+  motivo: string | null;
+  createdAt: string;
+  actor: string | null;
+};
+
 type ApostadorItem = {
   id: string;
   alias: string;
+  rangoId: string;
   rangoNombre: string;
   rangoOrden: number;
+  rangoManualId: string | null;
+  rangoManualNombre: string | null;
+  promocionAutomatica: boolean;
   apuestasTotal: number;
   apuestasAcumuladas: number;
   updatedAt: string;
   createdAt: string;
+  notas: ApostadorNote[];
+  etiquetas: ApostadorTag[];
+  promociones: ApostadorPromotion[];
 };
 
 type RankRuleItem = {
@@ -28,11 +65,19 @@ type RankRuleItem = {
   maxMonto: number;
 };
 
+type TagCatalogItem = {
+  id: string;
+  nombre: string;
+  color: string;
+  descripcion: string | null;
+};
+
 type ApostadoresManagerProps = {
   data: {
     apostadores: ApostadorItem[];
     rankRules: RankRuleItem[];
-    canAdjust: boolean;
+    tags: TagCatalogItem[];
+    canManage: boolean;
     total: number;
     query: string;
     promotionEvery: number;
@@ -57,44 +102,143 @@ function formatDate(value: string) {
   return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
-export function ApostadoresManager({ data }: ApostadoresManagerProps) {
-  const { apostadores, rankRules, canAdjust, total, query, promotionEvery } = data;
 
+export function ApostadoresManager({ data }: ApostadoresManagerProps) {
+  const { apostadores, rankRules, tags, canManage, total, query, promotionEvery } = data;
   const router = useRouter();
+
+  const [selectedId, setSelectedId] = useState<string | null>(apostadores[0]?.id ?? null);
+  const [selectedRankId, setSelectedRankId] = useState<string>(apostadores[0]?.rangoManualId ?? apostadores[0]?.rangoId ?? "");
+  const [noteContent, setNoteContent] = useState("");
+  const [tagSelection, setTagSelection] = useState<string>("");
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState("#a855f7");
+  const [newTagDescription, setNewTagDescription] = useState("");
   const [message, setMessage] = useState<MessageState | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
   const [focusedAction, setFocusedAction] = useState<string | null>(null);
 
-  const { minOrden, maxOrden } = useMemo(() => {
-    if (rankRules.length === 0) {
-      return { minOrden: 0, maxOrden: 0 };
-    }
-    const ordenes = rankRules.map((rule) => rule.orden);
-    return {
-      minOrden: Math.min(...ordenes),
-      maxOrden: Math.max(...ordenes),
-    };
-  }, [rankRules]);
+  const selected = useMemo(() => apostadores.find((item) => item.id === selectedId) ?? null, [apostadores, selectedId]);
 
-  const handleAdjust = (apostadorId: string, direction: "up" | "down") => {
-    if (!canAdjust) return;
+  useEffect(() => {
+    if (selected) {
+      setSelectedRankId(selected.rangoManualId ?? selected.rangoId);
+      setTagSelection("");
+      setNoteContent("");
+    }
+  }, [selected]);
+
+  const availableTags = useMemo(() => {
+    if (!selected) return tags;
+    const assigned = new Set(selected.etiquetas.map((item) => item.tagId));
+    return tags.filter((tag) => !assigned.has(tag.id));
+  }, [selected, tags]);
+
+  const handleSearchReset = () => router.replace("/apostadores");
+
+  const handleAddNote = () => {
+    if (!selected || !noteContent.trim()) return;
     setMessage(null);
-    setFocusedAction(`${apostadorId}:${direction}`);
+    setFocusedAction("note");
     startTransition(async () => {
-      try {
-        const result = await adjustApostadorRankAction({ apostadorId, direction });
-        if (result.ok) {
-          setMessage({ content: result.message, variant: "success" });
-          router.refresh();
-        } else {
-          setMessage({ content: result.message, variant: "error" });
-        }
-      } catch (error) {
-        console.error("Error ajustando rango", error);
-        setMessage({ content: "No se pudo actualizar el rango", variant: "error" });
-      } finally {
-        setFocusedAction(null);
+      const result = await addApostadorNoteAction({ apostadorId: selected.id, contenido: noteContent.trim() });
+      if (result.ok) {
+        setMessage({ content: result.message, variant: "success" });
+        setNoteContent("");
+        router.refresh();
+      } else {
+        setMessage({ content: result.message, variant: "error" });
       }
+      setFocusedAction(null);
+    });
+  };
+
+  const handleAssignTag = () => {
+    if (!selected || !tagSelection) return;
+    setMessage(null);
+    setFocusedAction(`assign:${tagSelection}`);
+    startTransition(async () => {
+      const result = await assignApostadorTagAction({ apostadorId: selected.id, tagId: tagSelection });
+      if (result.ok) {
+        setMessage({ content: result.message, variant: "success" });
+        setTagSelection("");
+        router.refresh();
+      } else {
+        setMessage({ content: result.message, variant: "error" });
+      }
+      setFocusedAction(null);
+    });
+  };
+
+  const handleRemoveTag = (assignmentId: string) => {
+    setMessage(null);
+    setFocusedAction(`remove:${assignmentId}`);
+    startTransition(async () => {
+      const result = await removeApostadorTagAction({ assignmentId });
+      if (result.ok) {
+        setMessage({ content: result.message, variant: "success" });
+        router.refresh();
+      } else {
+        setMessage({ content: result.message, variant: "error" });
+      }
+      setFocusedAction(null);
+    });
+  };
+
+  const handleCreateTag = () => {
+    if (!newTagName.trim()) {
+      setMessage({ content: "Define un nombre para la etiqueta", variant: "error" });
+      return;
+    }
+    setMessage(null);
+    setFocusedAction("createTag");
+    startTransition(async () => {
+      const result = await createApostadorTagAction({
+        nombre: newTagName.trim(),
+        color: newTagColor,
+        descripcion: newTagDescription.trim() || undefined,
+      });
+      if (result.ok) {
+        setMessage({ content: result.message, variant: "success" });
+        setNewTagName("");
+        setNewTagDescription("");
+        router.refresh();
+      } else {
+        setMessage({ content: result.message, variant: "error" });
+      }
+      setFocusedAction(null);
+    });
+  };
+
+  const handleApplyRank = () => {
+    if (!selected || !selectedRankId) return;
+    setMessage(null);
+    setFocusedAction("setRank");
+    startTransition(async () => {
+      const result = await setApostadorRankAction({ apostadorId: selected.id, rankId: selectedRankId });
+      if (result.ok) {
+        setMessage({ content: result.message, variant: "success" });
+        router.refresh();
+      } else {
+        setMessage({ content: result.message, variant: "error" });
+      }
+      setFocusedAction(null);
+    });
+  };
+
+  const handleToggleAuto = (enabled: boolean) => {
+    if (!selected) return;
+    setMessage(null);
+    setFocusedAction("toggleAuto");
+    startTransition(async () => {
+      const result = await setApostadorAutoModeAction({ apostadorId: selected.id, enabled });
+      if (result.ok) {
+        setMessage({ content: result.message, variant: "success" });
+        router.refresh();
+      } else {
+        setMessage({ content: result.message, variant: "error" });
+      }
+      setFocusedAction(null);
     });
   };
 
@@ -104,7 +248,7 @@ export function ApostadoresManager({ data }: ApostadoresManagerProps) {
         <CardHeader>
           <CardTitle>Apostadores</CardTitle>
           <CardDescription>
-            Resultados {apostadores.length} de {total}. Promocion automatica cada {promotionEvery} apuestas.
+            Resultados {apostadores.length} de {total}. Promoción automática cada {promotionEvery} apuestas.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -113,11 +257,11 @@ export function ApostadoresManager({ data }: ApostadoresManagerProps) {
               <Input name="q" defaultValue={query} placeholder="Buscar alias" />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" disabled={pending}>
+              <Button type="submit" disabled={isPending}>
                 Buscar
               </Button>
               {query ? (
-                <Button type="button" variant="ghost" onClick={() => router.replace("/apostadores")} disabled={pending}>
+                <Button type="button" variant="ghost" onClick={handleSearchReset} disabled={isPending}>
                   Limpiar
                 </Button>
               ) : null}
@@ -136,96 +280,289 @@ export function ApostadoresManager({ data }: ApostadoresManagerProps) {
         </CardContent>
       </Card>
 
-      <Card className="border-border/60 bg-card/80">
-        <CardHeader>
-          <CardTitle>Listado</CardTitle>
-          <CardDescription>Gestiona rangos y revisa el historial de apuestas por alias.</CardDescription>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-border/40 text-xs uppercase text-muted-foreground">
-              <tr>
-                <th className="py-2 pr-4">Alias</th>
-                <th className="py-2 pr-4">Rango</th>
-                <th className="py-2 pr-4">Apuestas</th>
-                <th className="py-2 pr-4">Acumuladas</th>
-                <th className="py-2 pr-4">Actualizado</th>
-                <th className="py-2 pr-4 text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {apostadores.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
-                    No se encontraron apostadores con los filtros actuales.
-                  </td>
-                </tr>
-              ) : (
-                apostadores.map((apostador) => {
-                  const canPromote = apostador.rangoOrden < maxOrden;
-                  const canDemote = apostador.rangoOrden > minOrden;
-                  const promotePending = pending && focusedAction === `${apostador.id}:up`;
-                  const demotePending = pending && focusedAction === `${apostador.id}:down`;
-
-                  return (
-                    <tr key={apostador.id} className="border-b border-border/20">
-                      <td className="py-3 pr-4 font-medium text-foreground">{apostador.alias}</td>
-                      <td className="py-3 pr-4">
-                        <span className="rounded bg-secondary/30 px-2 py-1 text-xs font-semibold text-secondary-foreground">
-                          {apostador.rangoNombre}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <Card className="border-border/60 bg-card/80">
+          <CardHeader>
+            <CardTitle>Listado</CardTitle>
+            <CardDescription>Selecciona un apostador para ver detalles.</CardDescription>
+          </CardHeader>
+          <CardContent className="max-h-[560px] overflow-y-auto">
+            <ul className="divide-y divide-border/30">
+              {apostadores.map((apostador) => {
+                const isActive = apostador.id === selectedId;
+                return (
+                  <li
+                    key={apostador.id}
+                    className={cn(
+                      "flex cursor-pointer flex-col gap-1 px-3 py-3 text-sm transition",
+                      isActive ? "rounded-md bg-primary/10" : "hover:bg-muted/30",
+                    )}
+                    onClick={() => {
+                      setSelectedId(apostador.id);
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-foreground">{apostador.alias}</span>
+                      <span className="text-xs text-muted-foreground">{apostador.rangoNombre}</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {apostador.etiquetas.slice(0, 3).map((tag) => (
+                        <span
+                          key={tag.assignmentId}
+                          className="rounded-full border border-border/40 px-2 py-0.5 text-[10px]"
+                          style={{ borderColor: `${tag.color}33`, backgroundColor: `${tag.color}20`, color: tag.color }}
+                        >
+                          {tag.nombre}
                         </span>
-                      </td>
-                      <td className="py-3 pr-4">{apostador.apuestasTotal.toLocaleString()}</td>
-                      <td className="py-3 pr-4">{apostador.apuestasAcumuladas.toLocaleString()}</td>
-                      <td className="py-3 pr-4 text-xs text-muted-foreground">{formatDate(apostador.updatedAt)}</td>
-                      <td className="py-3 pl-4">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={!canAdjust || !canDemote || demotePending}
-                            onClick={() => handleAdjust(apostador.id, "down")}
-                          >
-                            {demotePending ? "Aplicando..." : "Degradar"}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={!canAdjust || !canPromote || promotePending}
-                            onClick={() => handleAdjust(apostador.id, "up")}
-                          >
-                            {promotePending ? "Aplicando..." : "Promover"}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{apostador.apuestasTotal.toLocaleString()} apuestas</span>
+                      <span>
+                        {apostador.promocionAutomatica ? "Auto" : "Manual"}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+              {apostadores.length === 0 ? (
+                <li className="px-3 py-6 text-center text-sm text-muted-foreground">Sin resultados</li>
+              ) : null}
+            </ul>
+          </CardContent>
+        </Card>
 
-      <Card className="border-border/60 bg-card/80">
-        <CardHeader>
-          <CardTitle>Rangos configurados</CardTitle>
-          <CardDescription>Referencias de limites por rango.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {rankRules.map((rule) => (
-            <div key={rule.id} className="rounded border border-border/30 bg-background/60 p-4 text-sm">
-              <p className="font-semibold text-foreground">
-                {rule.orden}. {rule.nombre}
-              </p>
-              <p className="mt-1 text-muted-foreground">
-                Limite: {rule.minMonto.toLocaleString()} - {rule.maxMonto.toLocaleString()} USD
-              </p>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+        <div className="space-y-6">
+          {selected ? (
+            <>
+              <Card className="border-border/60 bg-card/80">
+                <CardHeader>
+                  <CardTitle className="flex flex-col gap-1">
+                    <span className="text-lg font-semibold text-foreground">{selected.alias}</span>
+                    <span className="text-xs text-muted-foreground">
+                      Actualizado {formatDate(selected.updatedAt)} . Creado {formatDate(selected.createdAt)}
+                    </span>
+                  </CardTitle>
+                  <CardDescription>
+                    {selected.promocionAutomatica
+                      ? "La promoción automática está activa"
+                      : `Rango fijo en ${selected.rangoManualNombre ?? selected.rangoNombre}`}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <select
+                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                      value={selectedRankId}
+                      onChange={(event) => setSelectedRankId(event.target.value)}
+                      disabled={!canManage || isPending}
+                    >
+                      {rankRules.map((rule) => (
+                        <option key={rule.id} value={rule.id}>
+                          {rule.nombre}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleApplyRank}
+                      disabled={!canManage || isPending || focusedAction === "setRank"}
+                    >
+                      {focusedAction === "setRank" ? "Aplicando..." : "Fijar rango"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={selected.promocionAutomatica ? "outline" : "secondary"}
+                      onClick={() => handleToggleAuto(!selected.promocionAutomatica)}
+                      disabled={!canManage || isPending || focusedAction === "toggleAuto"}
+                    >
+                      {selected.promocionAutomatica
+                        ? focusedAction === "toggleAuto" ? "Actualizando..." : "Desactivar auto"
+                        : focusedAction === "toggleAuto" ? "Actualizando..." : "Activar auto"}
+                    </Button>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Etiquetas</h3>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {selected.etiquetas.length === 0 ? (
+                        <span className="text-xs text-muted-foreground">Sin etiquetas asignadas.</span>
+                      ) : (
+                        selected.etiquetas.map((item) => (
+                          <span
+                            key={item.assignmentId}
+                            className="flex items-center gap-2 rounded-full border border-border/40 px-3 py-1 text-xs"
+                            style={{ borderColor: `${item.color}33`, backgroundColor: `${item.color}20`, color: item.color }}
+                          >
+                            {item.nombre}
+                            {canManage ? (
+                              <button
+                                type="button"
+                                className="text-xs"
+                                onClick={() => handleRemoveTag(item.assignmentId)}
+                                disabled={isPending && focusedAction === `remove:${item.assignmentId}`}
+                              >
+                                X
+                              </button>
+                            ) : null}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    {canManage ? (
+                      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <select
+                          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                          value={tagSelection}
+                          onChange={(event) => setTagSelection(event.target.value)}
+                          disabled={isPending}
+                        >
+                          <option value="">Selecciona etiqueta</option>
+                          {availableTags.map((tag) => (
+                            <option key={tag.id} value={tag.id}>
+                              {tag.nombre}
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleAssignTag}
+                          disabled={!tagSelection || (isPending && focusedAction?.startsWith("assign"))}
+                        >
+                          {focusedAction?.startsWith("assign") ? "Asignando..." : "Asignar"}
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {canManage ? (
+                    <div className="rounded-md border border-border/40 bg-background/50 p-4">
+                      <h4 className="text-sm font-semibold text-foreground">Crear nueva etiqueta</h4>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <Input
+                          placeholder="Nombre"
+                          value={newTagName}
+                          onChange={(event) => setNewTagName(event.target.value)}
+                          className="sm:flex-1"
+                          disabled={isPending}
+                        />
+                        <input
+                          type="color"
+                          value={newTagColor}
+                          onChange={(event) => setNewTagColor(event.target.value)}
+                          className="h-10 w-24 rounded border border-input"
+                          disabled={isPending}
+                        />
+                      </div>
+                      <Input
+                        placeholder="Descripcion (opcional)"
+                        value={newTagDescription}
+                        onChange={(event) => setNewTagDescription(event.target.value)}
+                        className="mt-2"
+                        disabled={isPending}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="mt-3"
+                        onClick={handleCreateTag}
+                        disabled={isPending && focusedAction === "createTag"}
+                      >
+                        {focusedAction === "createTag" ? "Creando..." : "Crear etiqueta"}
+                      </Button>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/60 bg-card/80">
+                <CardHeader>
+                  <CardTitle>Notas internas</CardTitle>
+                  <CardDescription>Registrar observaciones para el equipo.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    {selected.notas.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Sin notas registradas.</p>
+                    ) : (
+                      selected.notas.map((nota) => (
+                        <div key={nota.id} className="rounded border border-border/30 bg-background/60 p-3 text-sm">
+                          <p className="text-foreground">{nota.contenido}</p>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {nota.autor} . {formatDate(nota.createdAt)}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {canManage ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={noteContent}
+                        onChange={(event) => setNoteContent(event.target.value)}
+                        placeholder="Agregar nueva nota"
+                        className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        maxLength={600}
+                        disabled={isPending && focusedAction === "note"}
+                      />
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleAddNote}
+                          disabled={!noteContent.trim() || (isPending && focusedAction === "note")}
+                        >
+                          {focusedAction === "note" ? "Guardando..." : "Guardar nota"}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/60 bg-card/80">
+                <CardHeader>
+                  <CardTitle>Historial de promociones</CardTitle>
+                  <CardDescription>Cambios recientes de rango y acciones manuales.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {selected.promociones.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Sin promociones registradas.</p>
+                  ) : (
+                    selected.promociones.map((hist) => (
+                      <div key={hist.id} className="rounded border border-border/30 bg-background/60 p-3 text-sm">
+                        <p className="font-semibold text-foreground">
+                          {hist.rangoAnteriorNombre ?? "--"} ? {hist.rangoNuevoNombre}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(hist.createdAt)}
+                          {hist.actor ? ` . ${hist.actor}` : ""}
+                        </p>
+                        {hist.motivo ? (
+                          <p className="mt-1 text-xs text-muted-foreground">Motivo: {hist.motivo}</p>
+                        ) : null}
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          ) : (
+            <Card className="border-border/60 bg-card/80">
+              <CardHeader>
+                <CardTitle>Sin apostadores</CardTitle>
+                <CardDescription>Ajusta los filtros o registra nuevas ventas.</CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
+

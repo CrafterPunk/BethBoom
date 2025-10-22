@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -16,10 +16,13 @@ import {
 import { calculatePoolPayout, clamp } from "@/lib/business/odds";
 import { requireSession } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";
+import { buildAppEvent, emitAppEvent } from "@/lib/events";
 
 const payTicketSchema = z.object({
   ticketId: z.string().uuid(),
 });
+
+const HIGH_PAYOUT_THRESHOLD = 50_000;
 
 type ActionResult = { ok: true; message: string } | { ok: false; message: string };
 
@@ -87,7 +90,7 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
   }
 
   try {
-    const payout = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const cajaSesion = await tx.cajaSesion.findUnique({ where: { id: activeSession.id } });
       if (!cajaSesion || cajaSesion.estado !== CajaSesionEstado.ABIERTA) {
         throw new Error("CAJA_SESSION_MISSING");
@@ -200,13 +203,23 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
         },
       });
 
-      return payoutAmount;
+      return { amount: payoutAmount, ticket: freshTicket, market: freshMarket.nombre };
     });
+
+    if (result.amount >= HIGH_PAYOUT_THRESHOLD) {
+      emitAppEvent(
+        buildAppEvent({
+          type: "HIGH_PAYOUT",
+          message: `Pago mayor registrado: ${result.amount.toLocaleString()} USD`,
+          payload: { ticketId: parsed.data.ticketId, mercado: result.market, codigo: result.ticket.codigo },
+        }),
+      );
+    }
 
     revalidatePath("/payments");
     revalidatePath("/cash");
 
-    return { ok: true, message: `Ticket pagado. Monto entregado: ${payout.toLocaleString()} USD` };
+    return { ok: true, message: `Ticket pagado. Monto entregado: ${result.amount.toLocaleString()} USD` };
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "CAJA_SESSION_MISSING") {
@@ -230,6 +243,9 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
     return { ok: false, message: "No se pudo completar el pago" };
   }
 }
+
+
+
 
 
 
