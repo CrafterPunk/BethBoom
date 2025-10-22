@@ -162,6 +162,9 @@
 * **Admin**: sedes (con `franchise_share_pct_default`), **usuarios y AccessCodes** (CRUD + import/export JSON **solo de usuarios**), parÃ¡metros globales (fee default, umbral ODDS, delta_max, polÃ­tica de recÃ¡lculo), limpieza de logs.
 ### 6.1 Avances implementados (2025-10-21)
 
+* Ruta `/api/events` marcada como `force-dynamic`/`revalidate 0` y runtime Node para evitar timeouts de prerender en Vercel.
+
+
 * Navegacion lateral filtra modulos por rol y agrega accesos rapidos en la tarjeta del usuario junto con notificaciones en tiempo real.
 * Dashboard usa widgets reutilizables y arma layout especifico para admin, trabajador y auditor sin duplicar consultas.
 * Flujo de caja muestra capital inicial, saldo sistema y diferencia "te debe"/"debes entregar", y el panel de aprobacion incluye resumen global para conciliacion.
