@@ -167,7 +167,7 @@
 
 * Navegacion lateral filtra modulos por rol y agrega accesos rapidos en la tarjeta del usuario junto con notificaciones en tiempo real.
 * Dashboard usa widgets reutilizables y arma layout especifico para admin, trabajador y auditor sin duplicar consultas.
-* Flujo de caja muestra capital inicial, saldo sistema y diferencia "te debe"/"debes entregar", y el panel de aprobacion incluye resumen global para conciliacion.
+* Flujo de caja usa capital propio declarado, controla ventas/pagos del dia con bloqueo por saldo disponible, calcula liquidacion worker_owes/hq_owes y registra reporte de cierre para aprobacion admin.
 * Apostadores permite etiquetar clientes, alternar promocion automatica, registrar notas internas y revisar historial de promociones con accion de eliminar clara.
 
 
@@ -291,5 +291,6 @@
 * **Ticket**: apuesta individual.
 * **Hold%**: 1 âˆ’ payout/handle.
 * **Caja**: movimientos de dinero RP.
+
 
 
