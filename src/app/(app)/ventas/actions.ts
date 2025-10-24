@@ -77,6 +77,7 @@ type MarketWithOptions = Prisma.MercadoGetPayload<{
 }>;
 
 const ODDS_TOLERANCE = 0.0001;
+const ONE_WEEK_MS = 1000 * 60 * 60 * 24 * 7;
 
 function normalizeAlias(alias: string) {
   return alias.trim().toUpperCase();
@@ -307,6 +308,18 @@ export async function createTicketAction(input: unknown): Promise<TicketActionRe
         throw new Error("MARKET_MISSING");
       }
 
+      const now = new Date();
+      if (freshMarket.endsAt && freshMarket.endsAt.getTime() <= now.getTime()) {
+        await tx.mercado.update({
+          where: { id: freshMarket.id },
+          data: {
+            estado: MercadoEstado.CERRADO,
+            closedAt: freshMarket.closedAt ?? now,
+          },
+        });
+        throw new Error("MARKET_CLOSED");
+      }
+
       if (freshMarket.estado !== MercadoEstado.ABIERTO) {
         throw new Error("MARKET_CLOSED");
       }
@@ -489,11 +502,12 @@ export async function createTicketAction(input: unknown): Promise<TicketActionRe
         });
 
         await tx.cajaSesion.update({
-        where: { id: cajaSesion.id },
-        data: {
-          ventasTotal: { increment: monto },
-        },
-      });
+          where: { id: cajaSesion.id },
+          data: {
+            ventasTotal: { increment: monto },
+            ventasCount: { increment: 1 },
+          },
+        });
 
       await tx.auditLog.create({
           data: {
@@ -524,6 +538,7 @@ export async function createTicketAction(input: unknown): Promise<TicketActionRe
           trabajadorId: session.userId,
           apostadorId: updatedApostador.id,
           monto,
+          venceAt: freshMarket.endsAt ? new Date(freshMarket.endsAt.getTime() + ONE_WEEK_MS) : null,
           cuotaFijada:
             freshMarket.tipo === MercadoTipo.ODDS && cuotaTicket !== null
               ? new Prisma.Decimal(Number(cuotaTicket.toFixed(2)))
@@ -584,6 +599,8 @@ export async function createTicketAction(input: unknown): Promise<TicketActionRe
 
     revalidatePath("/ventas");
     revalidatePath("/markets");
+    revalidatePath("/cash");
+    revalidatePath("/dashboard");
 
     return {
       status: "success",

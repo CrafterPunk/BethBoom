@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import type { TicketEstado } from "@prisma/client";
 import {
   addApostadorNoteAction,
   assignApostadorTagAction,
@@ -39,6 +40,36 @@ type ApostadorPromotion = {
   actor: string | null;
 };
 
+type ApostadorTicket = {
+  id: string;
+  codigo: string;
+  mercado: string;
+  tipoMercado: "POOL" | "ODDS";
+  monto: number;
+  estado: TicketEstado;
+  venceAt: string | null;
+  pagoMonto: number | null;
+  pagadoAt: string | null;
+  createdAt: string;
+};
+
+type ApostadorHistory = {
+  tickets: ApostadorTicket[];
+  totals: {
+    apostado: number;
+    pagado: number;
+    expirado: number;
+    balance: number;
+  };
+};
+
+const TICKET_STATE_STYLES: Record<TicketEstado, { label: string; tone: "text-muted-foreground" | "text-emerald-300" | "text-amber-300" | "text-red-400" }> = {
+  ACTIVO: { label: "Pendiente", tone: "text-amber-300" },
+  PAGADO: { label: "Pagado", tone: "text-emerald-300" },
+  VENCIDO: { label: "Vencido", tone: "text-red-400" },
+  ANULADO: { label: "Anulado", tone: "text-muted-foreground" },
+};
+
 type ApostadorItem = {
   id: string;
   alias: string;
@@ -55,6 +86,7 @@ type ApostadorItem = {
   notas: ApostadorNote[];
   etiquetas: ApostadorTag[];
   promociones: ApostadorPromotion[];
+  history: ApostadorHistory;
 };
 
 type RankRuleItem = {
@@ -100,6 +132,10 @@ function formatDate(value: string) {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
   return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+
+function formatCurrency(value: number) {
+  return value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
 
@@ -475,6 +511,75 @@ export function ApostadoresManager({ data }: ApostadoresManagerProps) {
                       </Button>
                     </div>
                   ) : null}
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/60 bg-card/80">
+                <CardHeader>
+                  <CardTitle>Historial de apuestas</CardTitle>
+                  <CardDescription>Ultimas 25 operaciones registradas.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+                    <div>
+                      <p className="text-xs uppercase">Total apostado</p>
+                      <p className="text-lg font-semibold text-foreground">${formatCurrency(selected.history.totals.apostado)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase">Total pagado</p>
+                      <p className="text-lg font-semibold text-foreground">${formatCurrency(selected.history.totals.pagado)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase">Tickets vencidos</p>
+                      <p className="text-lg font-semibold text-foreground">${formatCurrency(selected.history.totals.expirado)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase">Balance jugador</p>
+                      <p className={cn("text-lg font-semibold", selected.history.totals.balance > 0 ? "text-emerald-300" : selected.history.totals.balance < 0 ? "text-red-400" : "text-muted-foreground")}>${formatCurrency(selected.history.totals.balance)}</p>
+                      <p className="text-xs text-muted-foreground">{selected.history.totals.balance >= 0 ? "Jugador en positivo" : "Jugador en negativo"}</p>
+                    </div>
+                  </div>
+
+                  {selected.history.tickets.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Sin apuestas registradas.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-xs md:text-sm">
+                        <thead className="text-muted-foreground">
+                          <tr>
+                            <th className="px-2 py-1 text-left font-medium">C�digo</th>
+                            <th className="px-2 py-1 text-left font-medium">Mercado</th>
+                            <th className="px-2 py-1 text-left font-medium">Monto</th>
+                            <th className="px-2 py-1 text-left font-medium">Estado</th>
+                            <th className="px-2 py-1 text-left font-medium">Pago</th>
+                            <th className="px-2 py-1 text-left font-medium">Vence</th>
+                            <th className="px-2 py-1 text-left font-medium">Registrado</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/40">
+                          {selected.history.tickets.map((ticket) => {
+                            const stateInfo = TICKET_STATE_STYLES[ticket.estado];
+                            return (
+                              <tr key={ticket.id} className="align-top">
+                                <td className="px-2 py-2 font-medium text-foreground">{ticket.codigo}</td>
+                                <td className="px-2 py-2 text-muted-foreground">
+                                  <div className="flex flex-col">
+                                    <span>{ticket.mercado}</span>
+                                    <span className="text-xs uppercase">{ticket.tipoMercado}</span>
+                                  </div>
+                                </td>
+                                <td className="px-2 py-2 text-foreground">${formatCurrency(ticket.monto)}</td>
+                                <td className={cn("px-2 py-2 font-medium", stateInfo.tone)}>{stateInfo.label}</td>
+                                <td className="px-2 py-2 text-foreground">{ticket.pagoMonto !== null ? `$${formatCurrency(ticket.pagoMonto)}` : "--"}</td>
+                                <td className="px-2 py-2 text-muted-foreground">{ticket.venceAt ? formatDate(ticket.venceAt) : "--"}</td>
+                                <td className="px-2 py-2 text-muted-foreground">{formatDate(ticket.createdAt)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

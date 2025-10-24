@@ -15,10 +15,25 @@ async function getPromotionThreshold() {
 
 export default async function SalesPage() {
   const session = await requireSession();
+  const now = new Date();
+
+  await prisma.mercado.updateMany({
+    where: {
+      estado: MercadoEstado.ABIERTO,
+      endsAt: { not: null, lte: now },
+    },
+    data: {
+      estado: MercadoEstado.CERRADO,
+      closedAt: now,
+    },
+  });
 
   const [markets, rankRules, promotionEvery] = await Promise.all([
     prisma.mercado.findMany({
-      where: { estado: MercadoEstado.ABIERTO },
+      where: {
+        estado: MercadoEstado.ABIERTO,
+        OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+      },
       include: {
         opciones: {
           orderBy: { createdAt: "asc" },
@@ -30,18 +45,24 @@ export default async function SalesPage() {
     getPromotionThreshold(),
   ]);
 
-  const marketsDto = markets.map((market) => ({
-    id: market.id,
-    nombre: market.nombre,
-    descripcion: market.descripcion,
-    tipo: market.tipo,
-    opciones: market.opciones.map((option) => ({
-      id: option.id,
-      nombre: option.nombre,
-      cuotaInicial: toNumber(option.cuotaInicial),
-      cuotaActual: toNumber(option.cuotaActual),
-    })),
-  }));
+  const marketsDto = markets.map((market) => {
+    const rawRemaining = market.endsAt ? market.endsAt.getTime() - now.getTime() : null;
+    const timeRemainingMs = rawRemaining !== null ? Math.max(rawRemaining, 0) : null;
+    return {
+      id: market.id,
+      nombre: market.nombre,
+      descripcion: market.descripcion,
+      tipo: market.tipo,
+      endsAt: market.endsAt ? market.endsAt.toISOString() : null,
+      timeRemainingMs,
+      opciones: market.opciones.map((option) => ({
+        id: option.id,
+        nombre: option.nombre,
+        cuotaInicial: toNumber(option.cuotaInicial),
+        cuotaActual: toNumber(option.cuotaActual),
+      })),
+    };
+  });
 
   const rankRulesDto = rankRules.map((rule) => ({
     id: rule.id,

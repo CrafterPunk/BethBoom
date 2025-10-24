@@ -23,6 +23,7 @@ const payTicketSchema = z.object({
 });
 
 const HIGH_PAYOUT_THRESHOLD = 50_000;
+const ONE_WEEK_MS = 1000 * 60 * 60 * 24 * 7;
 
 type ActionResult = { ok: true; message: string } | { ok: false; message: string };
 
@@ -98,7 +99,7 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
 
       const saldoDisponibleAntes = cajaSesion.capitalPropio + cajaSesion.ventasTotal - cajaSesion.pagosTotal;
 
-      const freshTicket = await tx.ticket.findUnique({
+      let freshTicket = await tx.ticket.findUnique({
         where: { id: ticket.id },
         include: {
           mercado: true,
@@ -109,6 +110,30 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
 
       if (!freshTicket || freshTicket.estado !== TicketEstado.ACTIVO) {
         throw new Error("TICKET_UNAVAILABLE");
+      }
+
+      const now = new Date();
+      const marketClosedAt = freshTicket.mercado.closedAt ?? null;
+      if (marketClosedAt && !freshTicket.venceAt) {
+        const computedExpiry = new Date(marketClosedAt.getTime() + ONE_WEEK_MS);
+        freshTicket = await tx.ticket.update({
+          where: { id: freshTicket.id },
+          data: { venceAt: computedExpiry },
+          include: {
+            mercado: true,
+            opcion: true,
+            pagado: true,
+          },
+        });
+      }
+
+      const venceAt = freshTicket.venceAt ?? (marketClosedAt ? new Date(marketClosedAt.getTime() + ONE_WEEK_MS) : null);
+      if (venceAt && venceAt.getTime() < now.getTime()) {
+        await tx.ticket.update({
+          where: { id: freshTicket.id },
+          data: { estado: TicketEstado.VENCIDO, venceAt },
+        });
+        throw new Error("TICKET_EXPIRED");
       }
 
       if (freshTicket.pagado) {
@@ -213,6 +238,7 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
         where: { id: cajaSesion.id },
         data: {
           pagosTotal: { increment: payoutAmount },
+          pagosCount: { increment: 1 },
         },
       });
 
@@ -231,6 +257,7 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
 
     revalidatePath("/payments");
     revalidatePath("/cash");
+    revalidatePath("/dashboard");
 
     return { ok: true, message: `Ticket pagado. Monto entregado: ${result.amount.toLocaleString()} USD` };
   } catch (error) {
@@ -252,6 +279,9 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
       }
       if (error.message === "INSUFFICIENT_BALANCE") {
         return { ok: false, message: "Saldo insuficiente. Pide pago en central u otro operador." };
+      }
+      if (error.message === "TICKET_EXPIRED") {
+        return { ok: false, message: "El ticket venció. El saldo ya pertenece a la caja." };
       }
     }
 

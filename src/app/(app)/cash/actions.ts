@@ -101,6 +101,7 @@ export async function openCashSessionAction(input: unknown): Promise<ActionResul
   });
 
   revalidatePath("/cash");
+  revalidatePath("/dashboard");
   return { ok: true, message: "Caja abierta" };
 }
 
@@ -123,6 +124,8 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
     saldoDisponible: number;
     liquidacionTipo: CajaLiquidacionTipo;
     liquidacionMonto: number;
+    ventasCount: number;
+    pagosCount: number;
   } | null = null;
 
   try {
@@ -159,6 +162,8 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
         saldoDisponible,
         liquidacionTipo,
         liquidacionMonto,
+        ventasCount: cajaSesion.ventasCount,
+        pagosCount: cajaSesion.pagosCount,
       } as const;
 
       cierreResumen = {
@@ -168,6 +173,8 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
         saldoDisponible,
         liquidacionTipo,
         liquidacionMonto,
+        ventasCount: cajaSesion.ventasCount,
+        pagosCount: cajaSesion.pagosCount,
       };
 
       await tx.cajaSesion.update({
@@ -216,6 +223,7 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
   );
 
   revalidatePath("/cash");
+  revalidatePath("/dashboard");
   return { ok: true, message: "Cierre solicitado" };
 }
 
@@ -238,6 +246,8 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
     saldoDisponible: number;
     liquidacionTipo: CajaLiquidacionTipo;
     liquidacionMonto: number;
+    ventasCount: number;
+    pagosCount: number;
   } | null = null;
 
   try {
@@ -268,6 +278,8 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
         saldoDisponible,
         liquidacionTipo,
         liquidacionMonto,
+        ventasCount: cajaSesion.ventasCount,
+        pagosCount: cajaSesion.pagosCount,
       };
 
       await tx.cajaSesion.update({
@@ -324,6 +336,7 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
   );
 
   revalidatePath("/cash");
+  revalidatePath("/dashboard");
   return { ok: true, message: "Caja cerrada" };
 }
 

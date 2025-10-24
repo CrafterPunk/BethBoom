@@ -21,6 +21,8 @@ type SalesMarket = {
   nombre: string;
   tipo: "POOL" | "ODDS";
   descripcion: string;
+  endsAt: string | null;
+  timeRemainingMs: number | null;
   opciones: SalesOption[];
 };
 
@@ -56,11 +58,37 @@ type MessageState = {
   variant: "success" | "error" | "info";
 };
 
+function formatTimeRemaining(value: number | null) {
+  if (value === null) {
+    return "Sin fecha de cierre";
+  }
+  if (value <= 0) {
+    return "Mercado vencido";
+  }
+  const totalSeconds = Math.ceil(value / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s restantes`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s restantes`;
+  }
+  return `${seconds}s restantes`;
+}
+
 export function SalesManager({ data }: SalesManagerProps) {
   const { markets, rankRules, promotionEvery, canSell } = data;
 
-  const [selectedMarketId, setSelectedMarketId] = useState(markets[0]?.id ?? "");
-  const [selectedOptionId, setSelectedOptionId] = useState(markets[0]?.opciones[0]?.id ?? "");
+  const [selectedMarketId, setSelectedMarketId] = useState(() => {
+    const firstActive = markets.find((market) => market.timeRemainingMs === null || market.timeRemainingMs > 0);
+    return firstActive?.id ?? markets[0]?.id ?? "";
+  });
+  const [selectedOptionId, setSelectedOptionId] = useState(() => {
+    const firstActive = markets.find((market) => market.timeRemainingMs === null || market.timeRemainingMs > 0);
+    return firstActive?.opciones[0]?.id ?? markets[0]?.opciones[0]?.id ?? "";
+  });
   const [alias, setAlias] = useState("");
   const [monto, setMonto] = useState("1000");
   const [message, setMessage] = useState<MessageState | null>(null);
@@ -69,14 +97,15 @@ export function SalesManager({ data }: SalesManagerProps) {
 
   const selectedMarket = useMemo(() => markets.find((item) => item.id === selectedMarketId) ?? null, [markets, selectedMarketId]);
   const selectedOption = useMemo(() => selectedMarket?.opciones.find((item) => item.id === selectedOptionId) ?? null, [selectedMarket, selectedOptionId]);
+  const isMarketExpired =
+    selectedMarket?.timeRemainingMs !== null && (selectedMarket?.timeRemainingMs ?? 0) <= 0;
 
   const resetForm = () => {
     setAlias("");
     setMonto("1000");
-    if (markets.length > 0) {
-      setSelectedMarketId(markets[0].id);
-      setSelectedOptionId(markets[0].opciones[0]?.id ?? "");
-    }
+    const firstActive = markets.find((market) => market.timeRemainingMs === null || market.timeRemainingMs > 0) ?? markets[0];
+    setSelectedMarketId(firstActive?.id ?? "");
+    setSelectedOptionId(firstActive?.opciones[0]?.id ?? "");
   };
 
   const handleMarketChange = (value: string) => {
@@ -129,6 +158,11 @@ export function SalesManager({ data }: SalesManagerProps) {
 
     if (!selectedMarket || !selectedOption) {
       setMessage({ content: "Selecciona un mercado y una opcion", variant: "error" });
+      return;
+    }
+
+    if (isMarketExpired) {
+      setMessage({ content: "Este mercado ya venció. Refresca para ver los activos.", variant: "error" });
       return;
     }
 
@@ -186,6 +220,11 @@ export function SalesManager({ data }: SalesManagerProps) {
                     </option>
                   ))}
                 </select>
+                {selectedMarket ? (
+                  <p className={cn("text-xs", isMarketExpired ? "text-destructive" : "text-muted-foreground")}> 
+                    {formatTimeRemaining(selectedMarket.timeRemainingMs)}
+                  </p>
+                ) : null}
               </div>
 
               <div className="space-y-2">
@@ -195,7 +234,7 @@ export function SalesManager({ data }: SalesManagerProps) {
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={selectedOptionId}
                   onChange={(event) => setSelectedOptionId(event.target.value)}
-                  disabled={!canSell || pending || !selectedMarket}
+                  disabled={!canSell || pending || !selectedMarket || isMarketExpired}
                 >
                   {selectedMarket?.opciones.map((option) => (
                     <option key={option.id} value={option.id}>
@@ -269,7 +308,7 @@ export function SalesManager({ data }: SalesManagerProps) {
                 <Button type="button" variant="ghost" onClick={resetForm} disabled={pending}>
                   Limpiar
                 </Button>
-                <Button type="submit" disabled={!canSell || pending}>
+                <Button type="submit" disabled={!canSell || pending || isMarketExpired}>
                   {pending ? "Registrando..." : "Registrar ticket"}
                 </Button>
               </div>
@@ -317,7 +356,12 @@ export function SalesManager({ data }: SalesManagerProps) {
                     <p className="text-sm font-semibold text-foreground">
                       {market.nombre} ({market.tipo})
                     </p>
-                    <p className="text-xs text-muted-foreground">{market.descripcion}</p>
+                    <div className="text-right text-xs">
+                      <p className="text-muted-foreground">{market.descripcion}</p>
+                      <p className={cn(market.timeRemainingMs !== null && market.timeRemainingMs <= 0 ? "text-destructive" : "text-muted-foreground")}> 
+                        {formatTimeRemaining(market.timeRemainingMs)}
+                      </p>
+                    </div>
                   </div>
                   <div className="mt-3 grid gap-2 text-sm text-muted-foreground">
                     {market.opciones.map((option) => (

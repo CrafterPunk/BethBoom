@@ -110,7 +110,9 @@ type CashSessionSummary = {
   estado: "ABIERTA" | "SOLICITADA" | "CERRADA";
   capitalPropio: number;
   ventasTotal: number;
+  ventasCount: number;
   pagosTotal: number;
+  pagosCount: number;
   saldoDisponible: number;
   liquidacionTipo: CajaLiquidacionTipo | null;
   liquidacionMonto: number;
@@ -125,7 +127,9 @@ type PendingSession = {
   franquiciaNombre: string;
   capitalPropio: number;
   ventasTotal: number;
+  ventasCount: number;
   pagosTotal: number;
+  pagosCount: number;
   saldoDisponible: number;
   liquidacionTipo: CajaLiquidacionTipo | null;
   liquidacionMonto: number;
@@ -339,15 +343,23 @@ export function CashManager({ data }: CashManagerProps) {
             <div className="space-y-4">
               <div className="grid gap-3 lg:grid-cols-3">
                 <SummaryCard label="Capital propio" value={`$${formatCurrency(session.capitalPropio)}`} />
-                <SummaryCard label="Ventas del día" value={`$${formatCurrency(session.ventasTotal)}`} />
-                <SummaryCard label="Pagos del día" value={`$${formatCurrency(session.pagosTotal)}`} />
+                <SummaryCard
+                  label="Ventas del dia"
+                  value={`$${formatCurrency(session.ventasTotal)}`}
+                  hint={`${session.ventasCount} ticket${session.ventasCount === 1 ? "" : "s"}`}
+                />
+                <SummaryCard
+                  label="Pagos del dia"
+                  value={`$${formatCurrency(session.pagosTotal)}`}
+                  hint={`${session.pagosCount} pago${session.pagosCount === 1 ? "" : "s"}`}
+                />
                 <SummaryCard
                   label="Saldo disponible"
                   value={`$${formatCurrency(session.saldoDisponible)}`}
                   hint="Capital propio + ventas - pagos registrados."
                 />
                 <SummaryCard
-                  label="Liquidación estimada"
+                  label="Liquidacion estimada"
                   value={liquidacionSummary.label}
                   tone={liquidacionSummary.tone}
                   hint={liquidacionSummary.hint}
@@ -357,7 +369,7 @@ export function CashManager({ data }: CashManagerProps) {
                   value={session.estado}
                   hint={
                     session.estado === "SOLICITADA"
-                      ? "Espera la aprobación para volver a abrir con cualquier capital disponible."
+                      ? "Espera la aprobacion para volver a abrir con cualquier capital disponible."
                       : undefined
                   }
                 />
@@ -435,11 +447,19 @@ export function CashManager({ data }: CashManagerProps) {
                     </div>
                     <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
                       <SummaryCard label="Capital propio" value={`$${formatCurrency(item.capitalPropio)}`} />
-                      <SummaryCard label="Ventas" value={`$${formatCurrency(item.ventasTotal)}`} />
-                      <SummaryCard label="Pagos" value={`$${formatCurrency(item.pagosTotal)}`} />
+                      <SummaryCard
+                        label="Ventas"
+                        value={`$${formatCurrency(item.ventasTotal)}`}
+                        hint={`${item.ventasCount} ticket${item.ventasCount === 1 ? "" : "s"}`}
+                      />
+                      <SummaryCard
+                        label="Pagos"
+                        value={`$${formatCurrency(item.pagosTotal)}`}
+                        hint={`${item.pagosCount} pago${item.pagosCount === 1 ? "" : "s"}`}
+                      />
                       <SummaryCard label="Saldo disponible" value={`$${formatCurrency(item.saldoDisponible)}`} />
                       <SummaryCard
-                        label="Liquidación"
+                        label="Liquidacion"
                         value={item.summary.label}
                         tone={item.summary.tone}
                         hint={item.summary.hint}

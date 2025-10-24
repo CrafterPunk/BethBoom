@@ -39,6 +39,7 @@ enum TicketEstado {
   ACTIVO
   ANULADO
   PAGADO
+  VENCIDO
 }
 
 enum CajaMovimientoTipo {
@@ -249,6 +250,7 @@ model Ticket {
   cuotaFijada              Decimal?     @db.Decimal(6, 2)
   estado                   TicketEstado @default(ACTIVO)
   motivoAnulacion          String?
+  venceAt                  DateTime?
   anulacionRegistradaPorId String?
   anulacionRegistradaPor   User?        @relation("TicketAnulador", fields: [anulacionRegistradaPorId], references: [id])
   anuladoAt                DateTime?
@@ -344,6 +346,8 @@ model CajaSesion {
   ventasTotal      Int                  @default(0)
   pagosTotal       Int                  @default(0)
   liquidacionTipo  CajaLiquidacionTipo?
+  ventasCount      Int                  @default(0)
+  pagosCount       Int                  @default(0)
   liquidacionMonto Int                  @default(0)
   reporteCierre    Json?
   solicitadoAt     DateTime?

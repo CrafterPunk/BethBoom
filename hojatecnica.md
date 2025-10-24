@@ -1,4 +1,4 @@
-﻿# BethBoom â€” Hoja de Arquitectura TÃ©cnica (V1.2 â€” lista para IA)
+# BethBoom â Hoja de Arquitectura TÃ©cnica (V1.2 â lista para IA)
 
 > Contexto: Web interna para gestionar apuestas en el servidor de GTA V RP. Este documento estÃ¡ optimizado para que una IA lo use como **contexto persistente** durante el desarrollo.
 
@@ -26,8 +26,8 @@
 > **IdentificaciÃ³n / Acceso (sin autenticaciÃ³n clÃ¡sica)**
 
 * No hay email/contraseÃ±a. Cada usuario usa un **AccessCode** (cÃ³digo Ãºnico) para identificarse.
-* Flujo: pantalla de acceso â†’ ingresar **AccessCode** â†’ se crea **sesiÃ³n firmada** (cookie httpOnly).
-* Los **AccessCodes** se gestionan desde **Admin â†’ Usuarios** (crear, revocar, rotar). TambiÃ©n se puede **importar/exportar JSON** **solo de usuarios** y sus permisos (no de parÃ¡metros).
+* Flujo: pantalla de acceso â ingresar **AccessCode** â se crea **sesiÃ³n firmada** (cookie httpOnly).
+* Los **AccessCodes** se gestionan desde **Admin â Usuarios** (crear, revocar, rotar). TambiÃ©n se puede **importar/exportar JSON** **solo de usuarios** y sus permisos (no de parÃ¡metros).
 * Campos de usuario: `display_name`, `rol`, `franquicia_id?`, `access_code` (hash en DB), `estado`.
 
 ---
@@ -57,12 +57,12 @@
 * **Cuotas variables (ODDS)**
 
   * Ajuste **automÃ¡tico por monto acumulado**: cuando el mercado acumula `umbral_recalc_monto` desde el Ãºltimo recÃ¡lculo (o apertura), se recalculan cuotas.
-  * **Umbral por defecto**: **30â€¯000** (editable por el creador de mercado y rangos superiores).
+  * **Umbral por defecto**: **30â¯000** (editable por el creador de mercado y rangos superiores).
   * **LÃ­mites de cuota**: `min=1.20`, `max=5.00`.
   * **FÃ³rmula recomendada** en Â§5.3. Sesgo sobre **total histÃ³rico**.
 * **Caja**
 
-  * **Apertura de caja por Trabajador** â†’ operaciÃ³n â†’ **Solicitud de cierre** â†’ **AprobaciÃ³n por Admin** (cuadre). Un solo arqueo de caja **de cada vendedor contra los dueÃ±os** cuando se solicita.
+  * **Apertura de caja por Trabajador** â operaciÃ³n â **Solicitud de cierre** â **AprobaciÃ³n por Admin** (cuadre). Un solo arqueo de caja **de cada vendedor contra los dueÃ±os** cuando se solicita.
   * Caja por franquicia y por trabajador (arqueos, saldos, egresos/ingresos).
 * **AuditorÃ­a**
 
@@ -75,11 +75,11 @@
 * **Visibilidad**: nombres de rangos y condiciones visibles para trabajadores.
 * **Nombres y lÃ­mites por rango (defaults, editables)**:
 
-  * **R1 â€“ Bronce**: mÃ­n **1â€¯000** / mÃ¡x **10â€¯000** USD
-  * **R2 â€“ Plata**: mÃ­n **1â€¯000** / mÃ¡x **20â€¯000** USD
-  * **R3 â€“ Oro**: mÃ­n **1â€¯000** / mÃ¡x **50â€¯000** USD
-  * **R4 â€“ Diamante**: mÃ­n **1â€¯000** / mÃ¡x **100â€¯000** USD
-  * **R5 â€“ Super VIP**: mÃ­n **1â€¯000** / mÃ¡x **250â€¯000** USD
+  * **R1 â Bronce**: mÃ­n **1â¯000** / mÃ¡x **10â¯000** USD
+  * **R2 â Plata**: mÃ­n **1â¯000** / mÃ¡x **20â¯000** USD
+  * **R3 â Oro**: mÃ­n **1â¯000** / mÃ¡x **50â¯000** USD
+  * **R4 â Diamante**: mÃ­n **1â¯000** / mÃ¡x **100â¯000** USD
+  * **R5 â Super VIP**: mÃ­n **1â¯000** / mÃ¡x **250â¯000** USD
 * Estos valores son **defaults** y pueden editarse por el **Admin**.
 
 ## 3) KPIs del Dashboard (portada)
@@ -110,12 +110,12 @@
 
 ## 4) Flujos operativos (MVP)
 
-1. **Turno**: Trabajador abre caja â†’ sistema inicia saldo inicial.
-2. **Venta**: seleccionar mercado â†’ opciÃ³n â†’ ingresar monto â†’ validar lÃ­mites â†’ confirmar ticket â†’ registrar en caja.
+1. **Turno**: Trabajador abre caja â sistema inicia saldo inicial.
+2. **Venta**: seleccionar mercado â opciÃ³n â ingresar monto â validar lÃ­mites â confirmar ticket â registrar en caja.
 3. **Recalc ODDS**: al alcanzar el **umbral de monto** desde el Ãºltimo recÃ¡lculo, sistema sugiere nuevas cuotas y aplica automÃ¡ticamente (o manual con toggle global).
-4. **Cierre de mercado**: marcar ganador(es) â†’ calcular pagos (POOL u ODDS) â†’ generar lista de tickets ganadores pendientes.
-5. **Pago**: Trabajador paga â†’ registra pago â†’ afecta caja.
-6. **Cierre de turno**: Trabajador solicita cierre â†’ Manager revisa â†’ confirma cuadre (o registra diferencia).
+4. **Cierre de mercado**: marcar ganador(es) â calcular pagos (POOL u ODDS) â generar lista de tickets ganadores pendientes.
+5. **Pago**: Trabajador paga â registra pago â afecta caja.
+6. **Cierre de turno**: Trabajador solicita cierre â Manager revisa â confirma cuadre (o registra diferencia).
 
 ---
 
@@ -152,17 +152,22 @@
 
 * **Acceso por cÃ³digo**: input de AccessCode + selecciÃ³n de franquicia si aplica.
 * **Dashboard**: layout segun rol (dueno, trabajador, auditor) con widgets especificos, KPIs clave, alertas ODDS y accesos rapidos.
-* **Ventas**: bÃºsqueda de mercado â†’ opciÃ³n â†’ teclado numÃ©rico â†’ validaciones por **rango del apostador**.
-* **Feedback ODDS**: si al confirmar el ticket cambian las cuotas por recÃ¡lculo automÃ¡tico, el sistema muestra **banner/toast** de cambio (antes â†’ despuÃ©s) y requiere **clic de confirmaciÃ³n** del vendedor para cerrar el ticket actualizado.
+* **Ventas**: bÃºsqueda de mercado â opciÃ³n â teclado numÃ©rico â validaciones por **rango del apostador**.
+* **Feedback ODDS**: si al confirmar el ticket cambian las cuotas por recÃ¡lculo automÃ¡tico, el sistema muestra **banner/toast** de cambio (antes â despuÃ©s) y requiere **clic de confirmaciÃ³n** del vendedor para cerrar el ticket actualizado.
 * **Mercados**: lista, crear/editar, suspender, cerrar, historial de cuotas.
 * **Pagos**: tickets ganadores pendientes, filtro por sede y por trabajador.
-* **Caja**: apertura/cierre por trabajador, resumen de capital inicial vs saldo sistema, diferencia "te debe" o "debito" y historial de movimientos.
+* **Caja**: apertura/cierre por trabajador, capital propio declarado, control de ventas/pagos, bloqueo por saldo y reporte de liquidacion.
 * **Apostadores**: ficha con alias unico, control de rango manual/auto, etiquetado de clientes, notas internas e historial de promociones.
 * **Reportes**: sede, trabajador, apostador; export CSV/JSON.
 * **Admin**: sedes (con `franchise_share_pct_default`), **usuarios y AccessCodes** (CRUD + import/export JSON **solo de usuarios**), parÃ¡metros globales (fee default, umbral ODDS, delta_max, polÃ­tica de recÃ¡lculo), limpieza de logs.
 ### 6.1 Avances implementados (2025-10-21)
 
 * Ruta `/api/events` marcada como `force-dynamic`/`revalidate 0` y runtime Node para evitar timeouts de prerender en Vercel.
+
+* Ventas del dia y pagos se actualizan en vivo gracias a contadores de sesion (ventasCount/pagosCount) que alimentan cash, dashboard y aprobaciones.
+* Cierre de caja incluye liquidacion worker_owes/hq_owes con conteos y resumen detallado en eventos.
+* Historial de apostadores muestra ultimas apuestas con balance neto y expira tickets no cobrados tras 7 dias (estado VENCIDO).
+* Mercados proximos muestran tiempo restante y se cierran automaticamente al vencer, bloqueando nuevas ventas.
 
 
 * Navegacion lateral filtra modulos por rol y agrega accesos rapidos en la tarjeta del usuario junto con notificaciones en tiempo real.
@@ -177,7 +182,7 @@
 * **Ventas rÃ¡pidas**: bÃºsqueda de mercado, selecciÃ³n de opciÃ³n, teclado numÃ©rico, validaciones en lÃ­nea.
 * **Mercados**: lista, crear/editar, suspender, cerrar, ver historial de cuotas.
 * **Pagos**: tickets ganadores pendientes, filtro por sede y por trabajador.
-* **Caja**: apertura/cierre por trabajador, resumen de capital inicial vs saldo sistema, diferencia "te debe" o "debito" y historial de movimientos.
+* **Caja**: apertura/cierre por trabajador, capital propio declarado, control de ventas/pagos, bloqueo por saldo y reporte de liquidacion.
 * **Reportes**: sede, trabajador, apostador; export CSV/JSON.
 * **Admin**: sedes, usuarios, parÃ¡metros globales (fee default, franchise_share_pct default, lÃ­mites, umbral ODDS, delta_max, polÃ­tica de recÃ¡lculo total vs incremental), limpieza de logs.
 
@@ -185,7 +190,7 @@
 
 ## 7) Stack tÃ©cnico (mÃ­nimo y entendible)
 
-* **App Fullâ€‘stack**: **Next.js 14 (App Router) + TypeScript** con **Server Actions/Route Handlers** (sin backend separado).
+* **App Fullâstack**: **Next.js 14 (App Router) + TypeScript** con **Server Actions/Route Handlers** (sin backend separado).
 * **UI**: TailwindCSS + shadcn/ui. Modo oscuro por defecto.
 * **DB**: **Supabase (PostgreSQL)**.
 * **ORM**: Prisma.
@@ -209,9 +214,9 @@
 ## 9) Entornos, CI/CD y configuraciÃ³n
 
 * **Entornos**: Local, Staging, Prod.
-* **CI**: GitHub Actions â†’ `pnpm lint` + `pnpm typecheck` + `pnpm build`.
+* **CI**: GitHub Actions â `pnpm lint` + `pnpm typecheck` + `pnpm build`.
 * **CD**: Vercel despliega `staging` y `main` automÃ¡ticamente. Variables `.env` por entorno (guardadas en Vercel/Supabase).
-* **Migraciones**: Prisma Migrate corriendo en deploy (postâ€‘deploy hook) o manual desde CI para `staging/main`.
+* **Migraciones**: Prisma Migrate corriendo en deploy (postâdeploy hook) o manual desde CI para `staging/main`.
 
 ---
 
@@ -237,7 +242,7 @@
   * **Rangos**: **Bronce**, **Plata**, **Oro**, **Diamante**, **Super VIP**.
   * `promociÃ³n_por_conteo_apuestas=30`.
   * LÃ­mites por rango (ver Â§2.1).
-  * ODDS: `umbral_recalc_monto=30â€¯000`, `odds_min=1.20`, `odds_max=5.00`, `delta_max=0.25`.
+  * ODDS: `umbral_recalc_monto=30â¯000`, `odds_min=1.20`, `odds_max=5.00`, `delta_max=0.25`.
 
 ## 12) AuditorÃ­a y logs
 
@@ -258,11 +263,11 @@
 
 ---
 
-## 14) Toâ€‘Do/Decisiones pendientes (mÃ­nimas)
+## 14) ToâDo/Decisiones pendientes (mÃ­nimas)
 
 * [ ] Confirmar **fee_pct default** (propuesto 12%).
 * [ ] Confirmar **franchise_share_pct default** (propuesto 50% del fee para la franquicia).
-* [ ] Confirmar **ticket_min/ticket_max** default (propuesto 10 / 10â€¯000 USD).
+* [ ] Confirmar **ticket_min/ticket_max** default (propuesto 10 / 10â¯000 USD).
 * [ ] Definir si el **recalc ODDS** es **auto** o **manual con confirmaciÃ³n** (propuesto: **auto**).
 * [ ] Definir si el **sesgo** usa **total histÃ³rico** (propuesto) o **incremental** desde Ãºltimo recÃ¡lculo.
 
@@ -270,7 +275,7 @@
 
 ## 15) Notas para implementaciÃ³n rÃ¡pida
 
-* Empezar por **DB + Prisma** (migraciones), luego **Auth (NextAuth Credentials)**, despuÃ©s **flujos Caja â†’ Tickets â†’ Cierre â†’ Pagos**. Finalmente **Dashboard** y **Reportes**.
+* Empezar por **DB + Prisma** (migraciones), luego **Auth (NextAuth Credentials)**, despuÃ©s **flujos Caja â Tickets â Cierre â Pagos**. Finalmente **Dashboard** y **Reportes**.
 * Plantillas de UI simples (shadcn) + validaciones con Zod.
 * Feature flags bÃ¡sicos en `ParametrosGlobales`.
 
@@ -289,7 +294,7 @@
 * **Mercado**: evento apostable.
 * **OpciÃ³n**: resultado apostable.
 * **Ticket**: apuesta individual.
-* **Hold%**: 1 âˆ’ payout/handle.
+* **Hold%**: 1 â payout/handle.
 * **Caja**: movimientos de dinero RP.
 
 

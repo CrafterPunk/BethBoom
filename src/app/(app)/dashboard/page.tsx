@@ -34,6 +34,33 @@ function formatPercent(value: number) {
   return `${value.toFixed(2)}%`;
 }
 
+const ONE_WEEK_MS = 1000 * 60 * 60 * 24 * 7;
+
+async function expireStaleTickets(now: Date) {
+  const cutoff = new Date(now.getTime() - ONE_WEEK_MS);
+  const staleTickets = await prisma.ticket.findMany({
+    where: {
+      estado: TicketEstado.ACTIVO,
+      mercado: { closedAt: { not: null, lt: cutoff } },
+    },
+    select: { id: true, mercado: { select: { closedAt: true } } },
+    take: 200,
+  });
+
+  if (staleTickets.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    staleTickets.map((ticket) => {
+      const closedAt = ticket.mercado.closedAt;
+      if (!closedAt) return Promise.resolve();
+      const venceAt = new Date(closedAt.getTime() + ONE_WEEK_MS);
+      return prisma.ticket.update({ where: { id: ticket.id }, data: { estado: TicketEstado.VENCIDO, venceAt } });
+    }),
+  );
+}
+
 function computeLiquidacion(capitalPropio: number, ventasTotal: number, pagosTotal: number) {
   const ventasMenosPagos = ventasTotal - pagosTotal;
 
@@ -118,6 +145,19 @@ export default async function DashboardPage() {
   const startOfDay = new Date(now);
   startOfDay.setHours(0, 0, 0, 0);
 
+  await prisma.mercado.updateMany({
+    where: {
+      estado: MercadoEstado.ABIERTO,
+      endsAt: { not: null, lte: now },
+    },
+    data: {
+      estado: MercadoEstado.CERRADO,
+      closedAt: now,
+    },
+  });
+
+  await expireStaleTickets(now);
+
   const [
     ticketsAgg,
     pagosAgg,
@@ -130,14 +170,23 @@ export default async function DashboardPage() {
     upcomingApostadores,
   ] = await Promise.all([
     prisma.ticket.aggregate({
+      where: { estado: { notIn: [TicketEstado.ANULADO] } },
       _sum: { monto: true },
       _count: { _all: true },
     }),
     prisma.pago.aggregate({ _sum: { monto: true } }),
-    prisma.ticket.count({ where: { createdAt: { gte: startOfDay } } }),
+    prisma.ticket.count({
+      where: {
+        createdAt: { gte: startOfDay },
+        estado: { notIn: [TicketEstado.ANULADO] },
+      },
+    }),
     prisma.pago.count({ where: { createdAt: { gte: startOfDay } } }),
     prisma.mercado.findMany({
-      where: { estado: MercadoEstado.ABIERTO },
+      where: {
+        estado: MercadoEstado.ABIERTO,
+        OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+      },
       select: {
         id: true,
         nombre: true,
@@ -207,7 +256,9 @@ export default async function DashboardPage() {
       codigo: item.franquicia?.codigo ?? null,
       capitalPropio: item.capitalPropio,
       ventasTotal: item.ventasTotal,
+      ventasCount: item.ventasCount,
       pagosTotal: item.pagosTotal,
+      pagosCount: item.pagosCount,
       saldoDisponible,
       liquidacionTipo: item.liquidacionTipo ?? liquidacion.tipo,
       liquidacionMonto: item.liquidacionMonto ?? liquidacion.monto,
@@ -291,8 +342,16 @@ export default async function DashboardPage() {
   ];
 
   const workerMetrics: MetricItem[] = [
-    { label: "Ventas del dia", value: `$${formatCurrency(myOpenSession?.ventasTotal ?? 0)}` },
-    { label: "Pagos del dia", value: `$${formatCurrency(myOpenSession?.pagosTotal ?? 0)}` },
+    {
+      label: "Ventas del dia",
+      value: `$${formatCurrency(myOpenSession?.ventasTotal ?? 0)}`,
+      hint: myOpenSession ? `${myOpenSession.ventasCount} ticket${myOpenSession.ventasCount === 1 ? "" : "s"}` : undefined,
+    },
+    {
+      label: "Pagos del dia",
+      value: `$${formatCurrency(myOpenSession?.pagosTotal ?? 0)}`,
+      hint: myOpenSession ? `${myOpenSession.pagosCount} pago${myOpenSession.pagosCount === 1 ? "" : "s"}` : undefined,
+    },
     {
       label: "Saldo disponible",
       value: `$${formatCurrency(myOpenSession ? myOpenSession.capitalPropio + myOpenSession.ventasTotal - myOpenSession.pagosTotal : 0)}`,
@@ -302,6 +361,7 @@ export default async function DashboardPage() {
           : myOpenSession.capitalPropio + myOpenSession.ventasTotal - myOpenSession.pagosTotal < 0
             ? "warning"
             : "positive",
+      hint: myOpenSession ? `${formatCurrency(myOpenSession.capitalPropio)} capital propio` : undefined,
     },
   ];
 
@@ -335,12 +395,14 @@ export default async function DashboardPage() {
                   <p className="mt-2 text-xl font-semibold text-foreground">${formatCurrency(myOpenSession.capitalPropio)}</p>
                 </div>
                 <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
-                  <p className="text-muted-foreground">Ventas del d�a</p>
+                  <p className="text-muted-foreground">Ventas del dia</p>
                   <p className="mt-2 text-xl font-semibold text-foreground">${formatCurrency(myOpenSession.ventasTotal)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{`${myOpenSession.ventasCount} ticket${myOpenSession.ventasCount === 1 ? "" : "s"}`}</p>
                 </div>
                 <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
-                  <p className="text-muted-foreground">Pagos del d�a</p>
+                  <p className="text-muted-foreground">Pagos del dia</p>
                   <p className="mt-2 text-xl font-semibold text-foreground">${formatCurrency(myOpenSession.pagosTotal)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{`${myOpenSession.pagosCount} pago${myOpenSession.pagosCount === 1 ? "" : "s"}`}</p>
                 </div>
                 <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
                   <p className="text-muted-foreground">Saldo disponible</p>
@@ -349,7 +411,7 @@ export default async function DashboardPage() {
                 </div>
                 {workerDifference ? (
                   <div className="rounded-lg border border-border/30 bg-background/60 p-4 text-sm">
-                    <p className="text-muted-foreground">Liquidaci�n estimada</p>
+                    <p className="text-muted-foreground">Liquidacion estimada</p>
                     <p className={`mt-2 text-xl font-semibold ${workerDifference.toneClass}`}>{workerDifference.text}</p>
                     <p className="mt-1 text-xs text-muted-foreground">{workerDifference.hint}</p>
                   </div>
