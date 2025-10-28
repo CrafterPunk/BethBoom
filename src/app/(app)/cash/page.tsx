@@ -1,15 +1,88 @@
-import { CajaSesionEstado, UserRole } from "@prisma/client";
+import { CajaSesionEstado, TicketEstado, UserRole, Prisma } from "@prisma/client";
 
 import { requireSession } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";
 
 import { CashManager } from "./cash-manager";
 
+type CashSessionWithRelations = Prisma.CajaSesionGetPayload<{
+  include: {
+    franquicia: true;
+    movimientos: {
+      orderBy: { createdAt: "asc" };
+    };
+  };
+}>;
+
+async function hydrateCashSession(session: CashSessionWithRelations, now: Date): Promise<CashSessionWithRelations> {
+  const [ventasAgg, pagosAgg] = await Promise.all([
+    prisma.ticket.aggregate({
+      _sum: { monto: true },
+      _count: { _all: true },
+      where: {
+        trabajadorId: session.trabajadorId,
+        franquiciaId: session.franquiciaId,
+        estado: { in: [TicketEstado.ACTIVO, TicketEstado.PAGADO] },
+        createdAt: { gte: session.createdAt, lte: now },
+      },
+    }),
+    prisma.pago.aggregate({
+      _sum: { monto: true },
+      _count: { _all: true },
+      where: {
+        pagadorId: session.trabajadorId,
+        franquiciaId: session.franquiciaId,
+        pagadoAt: { gte: session.createdAt, lte: now },
+      },
+    }),
+  ]);
+
+  const ventasTotal = Number(ventasAgg._sum?.monto ?? 0);
+  const ventasCount =
+    typeof ventasAgg._count === "object" && ventasAgg._count !== null ? ventasAgg._count._all ?? 0 : Number(ventasAgg._count ?? 0);
+  const pagosTotal = Number(pagosAgg._sum?.monto ?? 0);
+  const pagosCount =
+    typeof pagosAgg._count === "object" && pagosAgg._count !== null ? pagosAgg._count._all ?? 0 : Number(pagosAgg._count ?? 0);
+
+  const needsUpdate =
+    session.ventasTotal !== ventasTotal ||
+    session.ventasCount !== ventasCount ||
+    session.pagosTotal !== pagosTotal ||
+    session.pagosCount !== pagosCount;
+
+  if (needsUpdate) {
+    return prisma.cajaSesion.update({
+      where: { id: session.id },
+      data: {
+        ventasTotal,
+        ventasCount,
+        pagosTotal,
+        pagosCount,
+      },
+      include: {
+        franquicia: true,
+        movimientos: {
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+  }
+
+  return {
+    ...session,
+    ventasTotal,
+    ventasCount,
+    pagosTotal,
+    pagosCount,
+  };
+}
+
 export default async function CashPage() {
   const session = await requireSession();
   const isAdmin = session.role === UserRole.ADMIN_GENERAL;
+  const now = new Date();
 
-  const mySession = await prisma.cajaSesion.findFirst({
+  const rawSession = await prisma.cajaSesion.findFirst({
     where: {
       trabajadorId: session.userId,
       estado: { in: [CajaSesionEstado.ABIERTA, CajaSesionEstado.SOLICITADA] },
@@ -22,6 +95,8 @@ export default async function CashPage() {
     },
     orderBy: { createdAt: "desc" },
   });
+
+  const mySession = rawSession ? await hydrateCashSession(rawSession, now) : null;
 
   const pendingSessions = isAdmin
     ? await prisma.cajaSesion.findMany({
@@ -125,6 +200,7 @@ export default async function CashPage() {
     />
   );
 }
+
 
 
 

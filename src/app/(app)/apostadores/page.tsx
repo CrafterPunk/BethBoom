@@ -1,4 +1,4 @@
-﻿import { Prisma, TicketEstado, UserRole } from "@prisma/client";
+import { MercadoEstado, Prisma, TicketEstado, UserRole } from "@prisma/client";
 
 import { requireSession } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";
@@ -88,7 +88,7 @@ export default async function ApostadoresPage({
           orderBy: { createdAt: "desc" },
           take: 25,
           include: {
-            mercado: { select: { nombre: true, tipo: true, closedAt: true } },
+            mercado: { select: { nombre: true, tipo: true, closedAt: true, estado: true, ganadoraId: true } },
             pagado: { select: { monto: true, pagadoAt: true } },
           },
         },
@@ -108,10 +108,32 @@ export default async function ApostadoresPage({
   const apostadoresDto = apostadores.map((apostador) => {
     const historyTickets = apostador.tickets.map((ticket) => {
       const closedAt = ticket.mercado.closedAt;
-      const defaultExpiry = closedAt ? new Date(closedAt.getTime() + ONE_WEEK_MS) : null;
+            const defaultExpiry = closedAt ? new Date(closedAt.getTime() + ONE_WEEK_MS) : null;
       const venceAt = ticket.venceAt ?? defaultExpiry;
-      const isExpired = ticket.estado === TicketEstado.VENCIDO || (ticket.estado === TicketEstado.ACTIVO && venceAt && venceAt.getTime() < Date.now());
+      const isExpired =
+        ticket.estado === TicketEstado.VENCIDO ||
+        (ticket.estado === TicketEstado.ACTIVO && venceAt && venceAt.getTime() < Date.now());
       const effectiveEstado = isExpired && ticket.estado === TicketEstado.ACTIVO ? TicketEstado.VENCIDO : ticket.estado;
+      const marketEstado = ticket.mercado.estado;
+      const ganadoraId = ticket.mercado.ganadoraId;
+      const isMarketClosed = marketEstado === MercadoEstado.CERRADO;
+      const isWinner = Boolean(ganadoraId && ganadoraId === ticket.opcionId);
+
+      let uiEstado: "PENDIENTE" | "GANADOR_PENDIENTE" | "CERRADO_PERDIDO" | "PAGADO" | "PERDIDO" | "ANULADO";
+      if (effectiveEstado === TicketEstado.PAGADO) {
+        uiEstado = "PAGADO";
+      } else if (effectiveEstado === TicketEstado.ANULADO) {
+        uiEstado = "ANULADO";
+      } else if (effectiveEstado === TicketEstado.VENCIDO) {
+        uiEstado = "PERDIDO";
+      } else if (isMarketClosed && isWinner) {
+        uiEstado = "GANADOR_PENDIENTE";
+      } else if (isMarketClosed && !isWinner) {
+        uiEstado = "CERRADO_PERDIDO";
+      } else {
+        uiEstado = "PENDIENTE";
+      }
+
       const pagoMonto = ticket.pagado?.monto ? Number(ticket.pagado.monto) : null;
       return {
         id: ticket.id,
@@ -120,6 +142,7 @@ export default async function ApostadoresPage({
         tipoMercado: ticket.mercado.tipo,
         monto: ticket.monto,
         estado: effectiveEstado,
+        uiEstado,
         venceAt: venceAt ? venceAt.toISOString() : null,
         pagoMonto,
         pagadoAt: ticket.pagado?.pagadoAt ? ticket.pagado.pagadoAt.toISOString() : null,
@@ -214,3 +237,7 @@ export default async function ApostadoresPage({
     />
   );
 }
+
+
+
+

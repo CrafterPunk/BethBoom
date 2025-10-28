@@ -305,7 +305,14 @@ export async function setApostadorAutoModeAction(input: unknown): Promise<Action
 
 export async function addApostadorNoteAction(input: unknown): Promise<ActionResult> {
   const session = await requireSession();
-  if (session.role !== UserRole.ADMIN_GENERAL && session.role !== UserRole.TRABAJADOR) {
+  if (
+    ![
+      UserRole.ADMIN_GENERAL,
+      UserRole.TRABAJADOR,
+      UserRole.AUDITOR_GENERAL,
+      UserRole.AUDITOR_FRANQUICIA,
+    ].includes(session.role)
+  ) {
     return { ok: false, message: "No autorizado" };
   }
 

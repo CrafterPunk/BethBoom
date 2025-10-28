@@ -40,6 +40,8 @@ type ApostadorPromotion = {
   actor: string | null;
 };
 
+type TicketUIState = "PENDIENTE" | "GANADOR_PENDIENTE" | "CERRADO_PERDIDO" | "PAGADO" | "PERDIDO" | "ANULADO";
+
 type ApostadorTicket = {
   id: string;
   codigo: string;
@@ -47,6 +49,7 @@ type ApostadorTicket = {
   tipoMercado: "POOL" | "ODDS";
   monto: number;
   estado: TicketEstado;
+  uiEstado: TicketUIState;
   venceAt: string | null;
   pagoMonto: number | null;
   pagadoAt: string | null;
@@ -63,10 +66,12 @@ type ApostadorHistory = {
   };
 };
 
-const TICKET_STATE_STYLES: Record<TicketEstado, { label: string; tone: "text-muted-foreground" | "text-emerald-300" | "text-amber-300" | "text-red-400" }> = {
-  ACTIVO: { label: "Pendiente", tone: "text-amber-300" },
+const TICKET_STATE_STYLES: Record<TicketUIState, { label: string; tone: string }> = {
+  PENDIENTE: { label: "Pendiente", tone: "text-amber-300" },
+  GANADOR_PENDIENTE: { label: "Pendiente de pago", tone: "text-sky-300" },
+  CERRADO_PERDIDO: { label: "Cerrado - perdido", tone: "text-red-400" },
   PAGADO: { label: "Pagado", tone: "text-emerald-300" },
-  VENCIDO: { label: "Perdido", tone: "text-red-400" },
+  PERDIDO: { label: "Perdido", tone: "text-red-400" },
   ANULADO: { label: "Anulado", tone: "text-muted-foreground" },
 };
 
@@ -558,7 +563,7 @@ export function ApostadoresManager({ data }: ApostadoresManagerProps) {
                         </thead>
                         <tbody className="divide-y divide-border/40">
                           {selected.history.tickets.map((ticket) => {
-                            const stateInfo = TICKET_STATE_STYLES[ticket.estado];
+                            const stateInfo = TICKET_STATE_STYLES[ticket.uiEstado];
                             return (
                               <tr key={ticket.id} className="align-top">
                                 <td className="px-2 py-2 font-medium text-foreground">{ticket.codigo}</td>
@@ -669,6 +674,11 @@ export function ApostadoresManager({ data }: ApostadoresManagerProps) {
     </div>
   );
 }
+
+
+
+
+
 
 
 

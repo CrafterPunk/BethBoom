@@ -144,7 +144,7 @@ export default async function DashboardPage() {
       endsAt: { not: null, lte: now },
     },
     data: {
-      estado: MercadoEstado.CERRADO,
+      estado: MercadoEstado.SUSPENDIDO,
       closedAt: now,
     },
   });

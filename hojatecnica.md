@@ -314,3 +314,7 @@
 * **Toast global**: se incluye `ToastProvider` y hook `useToast` para notificaciones reutilizables en cliente.
 * **Build**: se normalizaron archivos `ventas`/layout en UTF-8 + LF, se anadieron `.editorconfig` y `.gitattributes` para forzar codificacion/line endings coherentes y desbloquear el deploy.
 * **Caja - aprobaciones**: el cierre recalcula ventas/pagos netos antes de enviarse; el panel de admin refleja la misma liquidacion y el login ya no exhibe AccessCodes de ejemplo.
+* **Caja - tiempo real**: las sesiones abiertas recalculan ventas/pagos netos en cada carga para reflejar de inmediato las operaciones del cajero.
+* **Mercados vencidos**: al alcanzar la hora de cierre se marcan como suspendidos (badge “Cierre vencido”) hasta que se asigne ganador.
+* **Notas de apostadores**: todos los roles pueden registrar notas internas para seguimiento.
+* **Historial de tickets**: nuevos estados visuales indican (1) mercado cerrado pendiente de pago y (2) mercado cerrado perdido; vencidos siguen marcados como perdido.
