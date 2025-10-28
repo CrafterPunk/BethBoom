@@ -31,19 +31,19 @@ function computeLiquidacion(
   ventasTotal: number,
   pagosTotal: number,
 ): { tipo: CajaLiquidacionTipo; monto: number } {
-  const ventasMenosPagos = ventasTotal - pagosTotal;
+  const neto = ventasTotal - pagosTotal;
 
-  if (ventasMenosPagos > capitalPropio) {
+  if (neto > 0) {
     return {
       tipo: "WORKER_OWES",
-      monto: ventasMenosPagos - capitalPropio,
+      monto: neto,
     };
   }
 
-  if (pagosTotal > capitalPropio + ventasTotal) {
+  if (neto < 0) {
     return {
       tipo: "HQ_OWES",
-      monto: pagosTotal - (capitalPropio + ventasTotal),
+      monto: Math.abs(neto),
     };
   }
 

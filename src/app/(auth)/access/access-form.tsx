@@ -46,7 +46,6 @@ export function AccessForm({ className, title = "Acceso BethBoom", description =
             <Input
               id="accessCode"
               name="accessCode"
-              placeholder="owner-AAAA1111"
               autoFocus
               autoComplete="off"
               inputMode="text"

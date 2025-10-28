@@ -1,8 +1,4 @@
-import {
-  CajaSesionEstado,
-  TicketEstado,
-  UserRole,
-} from "@prisma/client";
+import { CajaSesionEstado, UserRole } from "@prisma/client";
 
 import { requireSession } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";
@@ -26,35 +22,6 @@ export default async function CashPage() {
     },
     orderBy: { createdAt: "desc" },
   });
-
-  const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
-  const [salesToday, paymentsToday] = await Promise.all([
-    prisma.ticket.aggregate({
-      _sum: { monto: true },
-      _count: { _all: true },
-      where: {
-        trabajadorId: session.userId,
-        estado: { not: TicketEstado.ANULADO },
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-    }),
-    prisma.pago.aggregate({
-      _sum: { monto: true },
-      _count: { _all: true },
-      where: {
-        pagadorId: session.userId,
-        pagadoAt: { gte: startOfDay, lte: endOfDay },
-      },
-    }),
-  ]);
-
-  const ventasTodayTotal = Number(salesToday._sum.monto ?? 0);
-  const ventasTodayCount = (salesToday._count?._all ?? 0) as number;
-  const pagosTodayTotal = Number(paymentsToday._sum.monto ?? 0);
-  const pagosTodayCount = (paymentsToday._count?._all ?? 0) as number;
 
   const pendingSessions = isAdmin
     ? await prisma.cajaSesion.findMany({
@@ -101,11 +68,11 @@ export default async function CashPage() {
         id: mySession.id,
         estado: mySession.estado,
         capitalPropio: mySession.capitalPropio,
-        ventasTotal: ventasTodayTotal,
-        ventasCount: ventasTodayCount,
-        pagosTotal: pagosTodayTotal,
-        pagosCount: pagosTodayCount,
-        saldoDisponible: mySession.capitalPropio + ventasTodayTotal - pagosTodayTotal,
+        ventasTotal: mySession.ventasTotal,
+        ventasCount: mySession.ventasCount,
+        pagosTotal: mySession.pagosTotal,
+        pagosCount: mySession.pagosCount,
+        saldoDisponible: mySession.capitalPropio + mySession.ventasTotal - mySession.pagosTotal,
         liquidacionTipo: mySession.liquidacionTipo ?? null,
         liquidacionMonto: mySession.liquidacionMonto ?? 0,
         reporteCierre:

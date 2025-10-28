@@ -9,10 +9,9 @@ import {
   CajaMovimientoTipo,
   CajaSesionEstado,
   Prisma,
+  TicketEstado,
   UserRole,
 } from "@prisma/client";
-
-
 
 import { requireSession } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";
@@ -145,18 +144,47 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
         throw new Error("SESSION_NOT_FOUND");
       }
 
-      const saldoDisponible = cajaSesion.capitalPropio + cajaSesion.ventasTotal - cajaSesion.pagosTotal;
-      const ventasMenosPagos = cajaSesion.ventasTotal - cajaSesion.pagosTotal;
+      const now = new Date();
+
+      const [ventasAgg, pagosAgg] = await Promise.all([
+        tx.ticket.aggregate({
+          _sum: { monto: true },
+          _count: { _all: true },
+          where: {
+            trabajadorId: cajaSesion.trabajadorId,
+            franquiciaId: cajaSesion.franquiciaId,
+            estado: { in: [TicketEstado.ACTIVO, TicketEstado.PAGADO] },
+            createdAt: { gte: cajaSesion.createdAt, lte: now },
+          },
+        }),
+        tx.pago.aggregate({
+          _sum: { monto: true },
+          _count: { _all: true },
+          where: {
+            pagadorId: cajaSesion.trabajadorId,
+            franquiciaId: cajaSesion.franquiciaId,
+            pagadoAt: { gte: cajaSesion.createdAt, lte: now },
+          },
+        }),
+      ]);
+
+      const ventasTotal = Number(ventasAgg._sum.monto ?? 0);
+      const ventasCount = ventasAgg._count._all ?? 0;
+      const pagosTotal = Number(pagosAgg._sum.monto ?? 0);
+      const pagosCount = pagosAgg._count._all ?? 0;
+
+      const saldoDisponible = cajaSesion.capitalPropio + ventasTotal - pagosTotal;
+      const neto = ventasTotal - pagosTotal;
 
       let liquidacionTipo: CajaLiquidacionTipo = CajaLiquidacionTipo.BALANCEADO;
       let liquidacionMonto = 0;
 
-      if (ventasMenosPagos > cajaSesion.capitalPropio) {
+      if (neto > 0) {
         liquidacionTipo = CajaLiquidacionTipo.WORKER_OWES;
-        liquidacionMonto = ventasMenosPagos - cajaSesion.capitalPropio;
-      } else if (cajaSesion.pagosTotal > cajaSesion.capitalPropio + cajaSesion.ventasTotal) {
+        liquidacionMonto = neto;
+      } else if (neto < 0) {
         liquidacionTipo = CajaLiquidacionTipo.HQ_OWES;
-        liquidacionMonto = cajaSesion.pagosTotal - (cajaSesion.capitalPropio + cajaSesion.ventasTotal);
+        liquidacionMonto = Math.abs(neto);
       }
 
       const delta = liquidacionTipo === CajaLiquidacionTipo.WORKER_OWES
@@ -168,28 +196,28 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
 
       const reporteCierre = {
         capitalPropio: cajaSesion.capitalPropio,
-        ventas: cajaSesion.ventasTotal,
-        pagos: cajaSesion.pagosTotal,
+        ventas: ventasTotal,
+        pagos: pagosTotal,
         saldoDisponible,
         liquidacionTipo,
         liquidacionMonto,
         delta,
         deltaMensaje,
-        ventasCount: cajaSesion.ventasCount,
-        pagosCount: cajaSesion.pagosCount,
+        ventasCount,
+        pagosCount,
       } as const;
 
       cierreResumen = {
         capitalPropio: cajaSesion.capitalPropio,
-        ventas: cajaSesion.ventasTotal,
-        pagos: cajaSesion.pagosTotal,
+        ventas: ventasTotal,
+        pagos: pagosTotal,
         saldoDisponible,
         liquidacionTipo,
         liquidacionMonto,
         delta,
         deltaMensaje,
-        ventasCount: cajaSesion.ventasCount,
-        pagosCount: cajaSesion.pagosCount,
+        ventasCount,
+        pagosCount,
       };
       cierreDeltaMensaje = deltaMensaje;
 
@@ -197,10 +225,14 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
         where: { id: cajaSesion.id },
         data: {
           estado: CajaSesionEstado.SOLICITADA,
+          ventasTotal,
+          ventasCount,
+          pagosTotal,
+          pagosCount,
           liquidacionTipo,
           liquidacionMonto,
           reporteCierre,
-          solicitadoAt: new Date(),
+          solicitadoAt: now,
         },
       });
 
