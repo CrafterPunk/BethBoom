@@ -1,4 +1,4 @@
-﻿import {
+import {
   CajaSesionEstado,
   MercadoEstado,
   MercadoTipo,
@@ -129,6 +129,9 @@ export default async function PaymentsPage() {
       });
     }
 
+    const fee = Math.floor(payout * 0.05);
+    const net = Math.max(payout - fee, 0);
+
     return {
       id: ticket.id,
       codigo: ticket.codigo,
@@ -139,6 +142,8 @@ export default async function PaymentsPage() {
       monto: ticket.monto,
       cuota,
       payout,
+      fee,
+      net,
       createdAt: ticket.createdAt.toISOString(),
     } satisfies PaymentTicket;
   });
@@ -153,5 +158,6 @@ export default async function PaymentsPage() {
     />
   );
 }
+
 
 

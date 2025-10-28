@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -17,6 +17,7 @@ import { calculatePoolPayout, clamp } from "@/lib/business/odds";
 import { requireSession } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";
 import { buildAppEvent, emitAppEvent } from "@/lib/events";
+import { formatCurrency } from "@/lib/format";
 
 const payTicketSchema = z.object({
   ticketId: z.string().uuid(),
@@ -184,7 +185,10 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
         });
       }
 
-      if (payoutAmount > saldoDisponibleAntes) {
+      const feeAmount = Math.floor(payoutAmount * 0.05);
+      const netAmount = Math.max(payoutAmount - feeAmount, 0);
+
+      if (netAmount > saldoDisponibleAntes) {
         throw new Error("INSUFFICIENT_BALANCE");
       }
 
@@ -193,7 +197,7 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
           ticketId: freshTicket.id,
           pagadorId: session.userId,
           franquiciaId: cajaSesion.franquiciaId,
-          monto: payoutAmount,
+          monto: netAmount,
         },
       });
 
@@ -210,7 +214,7 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
           trabajadorId: session.userId,
           cajaSesionId: cajaSesion.id,
           tipo: CajaMovimientoTipo.EGRESO,
-          monto: payoutAmount,
+          monto: netAmount,
           refTipo: "PAGO",
           refId: pago.id,
           notas: `Pago ticket ${freshTicket.codigo}`,
@@ -229,7 +233,7 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
           despues: {
             estado: TicketEstado.PAGADO,
             pagoId: pago.id,
-            montoPagado: payoutAmount,
+            montoPagado: netAmount,
           },
         },
       });
@@ -237,19 +241,19 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
       await tx.cajaSesion.update({
         where: { id: cajaSesion.id },
         data: {
-          pagosTotal: { increment: payoutAmount },
+          pagosTotal: { increment: netAmount },
           pagosCount: { increment: 1 },
         },
       });
 
-      return { amount: payoutAmount, ticket: freshTicket, market: freshMarket.nombre };
+      return { gross: payoutAmount, net: netAmount, fee: feeAmount, ticket: freshTicket, market: freshMarket.nombre };
     });
 
-    if (result.amount >= HIGH_PAYOUT_THRESHOLD) {
+    if (result.gross >= HIGH_PAYOUT_THRESHOLD) {
       emitAppEvent(
         buildAppEvent({
           type: "HIGH_PAYOUT",
-          message: `Pago mayor registrado: ${result.amount.toLocaleString()} USD`,
+          message: `Pago mayor registrado: $${formatCurrency(result.net)} USD`,
           payload: { ticketId: parsed.data.ticketId, mercado: result.market, codigo: result.ticket.codigo },
         }),
       );
@@ -259,7 +263,10 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
     revalidatePath("/cash");
     revalidatePath("/dashboard");
 
-    return { ok: true, message: `Ticket pagado. Monto entregado: ${result.amount.toLocaleString()} USD` };
+    return {
+      ok: true,
+      message: `Ticket pagado. Total entregado: $${formatCurrency(result.net)} USD (Comision 5%: $${formatCurrency(result.fee)} USD)`,
+    };
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "CAJA_SESSION_MISSING") {
@@ -281,7 +288,7 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
         return { ok: false, message: "Saldo insuficiente. Pide pago en central u otro operador." };
       }
       if (error.message === "TICKET_EXPIRED") {
-        return { ok: false, message: "El ticket venció. El saldo ya pertenece a la caja." };
+        return { ok: false, message: "El ticket vencio. El saldo ya pertenece a la caja." };
       }
     }
 
@@ -289,6 +296,15 @@ export async function payTicketAction(input: unknown): Promise<ActionResult> {
     return { ok: false, message: "No se pudo completar el pago" };
   }
 }
+
+
+
+
+
+
+
+
+
 
 
 

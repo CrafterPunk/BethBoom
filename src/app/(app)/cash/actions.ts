@@ -1,6 +1,7 @@
 "use server";
 
 import { buildAppEvent, emitAppEvent } from "@/lib/events";
+import { formatDeltaMessage } from "@/lib/format";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
@@ -126,7 +127,10 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
     liquidacionMonto: number;
     ventasCount: number;
     pagosCount: number;
+    delta?: number;
+    deltaMensaje?: string;
   } | null = null;
+  let cierreDeltaMensaje: string | null = null;
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -155,6 +159,13 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
         liquidacionMonto = cajaSesion.pagosTotal - (cajaSesion.capitalPropio + cajaSesion.ventasTotal);
       }
 
+      const delta = liquidacionTipo === CajaLiquidacionTipo.WORKER_OWES
+        ? liquidacionMonto
+        : liquidacionTipo === CajaLiquidacionTipo.HQ_OWES
+          ? -liquidacionMonto
+          : 0;
+      const deltaMensaje = formatDeltaMessage(delta);
+
       const reporteCierre = {
         capitalPropio: cajaSesion.capitalPropio,
         ventas: cajaSesion.ventasTotal,
@@ -162,6 +173,8 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
         saldoDisponible,
         liquidacionTipo,
         liquidacionMonto,
+        delta,
+        deltaMensaje,
         ventasCount: cajaSesion.ventasCount,
         pagosCount: cajaSesion.pagosCount,
       } as const;
@@ -173,9 +186,12 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
         saldoDisponible,
         liquidacionTipo,
         liquidacionMonto,
+        delta,
+        deltaMensaje,
         ventasCount: cajaSesion.ventasCount,
         pagosCount: cajaSesion.pagosCount,
       };
+      cierreDeltaMensaje = deltaMensaje;
 
       await tx.cajaSesion.update({
         where: { id: cajaSesion.id },
@@ -224,7 +240,7 @@ export async function requestCashCloseAction(input: unknown): Promise<ActionResu
 
   revalidatePath("/cash");
   revalidatePath("/dashboard");
-  return { ok: true, message: "Cierre solicitado" };
+  return { ok: true, message: `Cierre solicitado. ${cierreDeltaMensaje ?? formatDeltaMessage(0)}` };
 }
 
 export async function approveCashSessionAction(input: unknown): Promise<ActionResult> {
@@ -248,7 +264,10 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
     liquidacionMonto: number;
     ventasCount: number;
     pagosCount: number;
+    delta: number;
+    deltaMensaje: string;
   } | null = null;
+  let approveDeltaMensaje: string | null = null;
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -270,6 +289,12 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
       const liquidacionTipo = cajaSesion.liquidacionTipo ?? CajaLiquidacionTipo.BALANCEADO;
       const liquidacionMonto = cajaSesion.liquidacionMonto ?? 0;
       const saldoDisponible = cajaSesion.capitalPropio + cajaSesion.ventasTotal - cajaSesion.pagosTotal;
+      const delta = liquidacionTipo === CajaLiquidacionTipo.WORKER_OWES
+        ? liquidacionMonto
+        : liquidacionTipo === CajaLiquidacionTipo.HQ_OWES
+          ? -liquidacionMonto
+          : 0;
+      const deltaMensaje = formatDeltaMessage(delta);
 
       resumen = {
         capitalPropio: cajaSesion.capitalPropio,
@@ -280,7 +305,10 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
         liquidacionMonto,
         ventasCount: cajaSesion.ventasCount,
         pagosCount: cajaSesion.pagosCount,
+        delta,
+        deltaMensaje,
       };
+      approveDeltaMensaje = deltaMensaje;
 
       await tx.cajaSesion.update({
         where: { id: cajaSesion.id },
@@ -337,8 +365,18 @@ export async function approveCashSessionAction(input: unknown): Promise<ActionRe
 
   revalidatePath("/cash");
   revalidatePath("/dashboard");
-  return { ok: true, message: "Caja cerrada" };
+  return { ok: true, message: `Cierre aprobado. ${approveDeltaMensaje ?? formatDeltaMessage(0)}` };
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

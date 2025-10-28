@@ -1,4 +1,4 @@
-﻿import {
+import {
   CajaLiquidacionTipo,
   CajaSesionEstado,
   MercadoEstado,
@@ -129,21 +129,14 @@ function describeWorkerDifference(capitalPropio: number, ventasTotal: number, pa
 
 
 
-function describeAdminDifference(diff: number) {
-  if (diff === 0) {
-    return { label: "Cuadre exacto", tone: undefined } as const;
-  }
-  if (diff > 0) {
-    return { label: `Recibir $${formatCurrency(diff)}`, tone: "positive" as const };
-  }
-  return { label: `Entregar $${formatCurrency(Math.abs(diff))}`, tone: "warning" as const };
-}
 
 export default async function DashboardPage() {
   const session = await requireSession();
   const now = new Date();
   const startOfDay = new Date(now);
   startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
 
   await prisma.mercado.updateMany({
     where: {
@@ -236,6 +229,47 @@ export default async function DashboardPage() {
     }),
   ]);
 
+  const workerIds = openSessionsRaw.map((item) => item.trabajadorId);
+  const dailyTotalsByWorker = new Map<string, { ventasTotal: number; ventasCount: number; pagosTotal: number; pagosCount: number }>();
+
+  if (workerIds.length > 0) {
+    const workersDailyTotals = await Promise.all(
+      workerIds.map(async (workerId) => {
+        const [ticketAgg, pagoAgg] = await Promise.all([
+          prisma.ticket.aggregate({
+            _sum: { monto: true },
+            _count: { _all: true },
+            where: {
+              trabajadorId: workerId,
+              estado: { not: TicketEstado.ANULADO },
+              createdAt: { gte: startOfDay, lte: endOfDay },
+            },
+          }),
+          prisma.pago.aggregate({
+            _sum: { monto: true },
+            _count: { _all: true },
+            where: {
+              pagadorId: workerId,
+              pagadoAt: { gte: startOfDay, lte: endOfDay },
+            },
+          }),
+        ]);
+
+        return {
+          trabajadorId: workerId,
+          ventasTotal: Number(ticketAgg._sum.monto ?? 0),
+          ventasCount: ticketAgg._count?._all ?? 0,
+          pagosTotal: Number(pagoAgg._sum.monto ?? 0),
+          pagosCount: pagoAgg._count?._all ?? 0,
+        };
+      }),
+    );
+
+    workersDailyTotals.forEach((entry) => {
+      dailyTotalsByWorker.set(entry.trabajadorId, entry);
+    });
+  }
+
   const handleTotal = ticketsAgg._sum.monto ?? 0;
   const payoutTotal = pagosAgg._sum.monto ?? 0;
   const holdPct = handleTotal > 0 ? ((handleTotal - payoutTotal) / handleTotal) * 100 : 0;
@@ -246,8 +280,15 @@ export default async function DashboardPage() {
   ).length;
 
   const normalizedSessions = openSessionsRaw.map((item) => {
-    const saldoDisponible = item.capitalPropio + item.ventasTotal - item.pagosTotal;
-    const liquidacion = computeLiquidacion(item.capitalPropio, item.ventasTotal, item.pagosTotal);
+    const daily = dailyTotalsByWorker.get(item.trabajadorId) ?? {
+      ventasTotal: 0,
+      ventasCount: 0,
+      pagosTotal: 0,
+      pagosCount: 0,
+    };
+    const saldoHistorico = item.capitalPropio + item.ventasTotal - item.pagosTotal;
+    const saldoDisponible = item.capitalPropio + daily.ventasTotal - daily.pagosTotal;
+    const liquidacion = computeLiquidacion(item.capitalPropio, daily.ventasTotal, daily.pagosTotal);
     return {
       id: item.id,
       trabajador: item.trabajador.displayName,
@@ -255,18 +296,35 @@ export default async function DashboardPage() {
       franquicia: item.franquicia?.nombre ?? "",
       codigo: item.franquicia?.codigo ?? null,
       capitalPropio: item.capitalPropio,
-      ventasTotal: item.ventasTotal,
-      ventasCount: item.ventasCount,
-      pagosTotal: item.pagosTotal,
-      pagosCount: item.pagosCount,
+      ventasTotal: daily.ventasTotal,
+      ventasCount: daily.ventasCount,
+      pagosTotal: daily.pagosTotal,
+      pagosCount: daily.pagosCount,
       saldoDisponible,
+      saldoHistorico,
       liquidacionTipo: item.liquidacionTipo ?? liquidacion.tipo,
       liquidacionMonto: item.liquidacionMonto ?? liquidacion.monto,
     };
   });
 
   const openCashCount = normalizedSessions.length;
-  const myOpenSession = normalizedSessions.find((item) => item.trabajadorId === session.userId) ?? null;
+  const myOpenSessionRaw = openSessionsRaw.find((item) => item.trabajadorId === session.userId) ?? null;
+  const myDailyTotals = myOpenSessionRaw ? dailyTotalsByWorker.get(myOpenSessionRaw.trabajadorId) ?? {
+    ventasTotal: 0,
+    ventasCount: 0,
+    pagosTotal: 0,
+    pagosCount: 0,
+  } : null;
+  const myOpenSession = myOpenSessionRaw && myDailyTotals
+    ? {
+        capitalPropio: myOpenSessionRaw.capitalPropio,
+        ventasTotal: myDailyTotals.ventasTotal,
+        ventasCount: myDailyTotals.ventasCount,
+        pagosTotal: myDailyTotals.pagosTotal,
+        pagosCount: myDailyTotals.pagosCount,
+        saldoDisponible: myOpenSessionRaw.capitalPropio + myDailyTotals.ventasTotal - myDailyTotals.pagosTotal,
+      }
+    : null;
 
   const oddsAlerts = activeMarkets
     .filter((market) => market.tipo === MercadoTipo.ODDS && market.umbralRecalcMonto > 0)
@@ -283,12 +341,12 @@ export default async function DashboardPage() {
     .sort((a, b) => b.progress - a.progress);
 
   const negativeSessionItems: ListItem[] = normalizedSessions
-    .filter((item) => item.saldoDisponible < 0)
+     .filter((item) => item.saldoHistorico < 0)
     .map((item) => ({
       id: item.id,
       title: item.trabajador,
       subtitle: item.codigo ? `${item.franquicia} (${item.codigo})` : item.franquicia,
-      meta: `-$${formatCurrency(Math.abs(item.saldoDisponible))} USD`,
+      meta: `-$${formatCurrency(Math.abs(item.saldoHistorico))} USD`,
       tone: "negative" as const,
     }));
 
@@ -320,7 +378,7 @@ export default async function DashboardPage() {
   const upcomingPromotionItems: ListItem[] = upcomingPromotions.map((apostador) => ({
     id: apostador.id,
     title: apostador.alias,
-    subtitle: `${apostador.rangoNombre || "Sin rango"} Â· ${apostador.apuestasAcumuladas.toLocaleString()} / ${promotionEvery.toLocaleString()} apuestas`,
+    subtitle: `${apostador.rangoNombre || "Sin rango"} - ${apostador.apuestasAcumuladas.toLocaleString()} / ${promotionEvery.toLocaleString()} apuestas`,
     meta: `Faltan ${apostador.remaining.toLocaleString()}`,
     tone: "warning" as const,
   }));
@@ -419,12 +477,12 @@ export default async function DashboardPage() {
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No tienes una caja abierta. Abre una nueva caja desde la secci�n Caja para iniciar tu turno.
+                No tienes una caja abierta. Abre una nueva caja desde la seccion Caja para iniciar tu turno.
               </p>
             )}
           </DashboardWidget>
 
-          <DashboardWidget title="Alertas de mercados" description="Mercados cercanos a recÃ¡lculo de cuotas">
+          <DashboardWidget title="Alertas de mercados" description="Mercados cercanos a recálculo de cuotas">
             <SimpleList items={oddsAlertItems.slice(0, 4)} emptyMessage="Sin alertas por ahora." />
           </DashboardWidget>
         </>
@@ -447,7 +505,7 @@ export default async function DashboardPage() {
             </DashboardWidget>
           </div>
 
-          <DashboardWidget title="PrÃ³ximos ascensos" description="Apostadores prÃ³ximos al cambio de rango">
+          <DashboardWidget title="Próximos ascensos" description="Apostadores próximos al cambio de rango">
             <SimpleList items={upcomingPromotionItems} emptyMessage="No hay apostadores cercanos al ascenso." />
           </DashboardWidget>
         </>
@@ -461,7 +519,7 @@ export default async function DashboardPage() {
         </DashboardWidget>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <DashboardWidget title="Alertas ODDS" description="Mercados con acumulado cercano al umbral de recÃ¡lculo">
+          <DashboardWidget title="Alertas ODDS" description="Mercados con acumulado cercano al umbral de recálculo">
             <SimpleList items={oddsAlertItems} emptyMessage="Sin alertas por ahora." />
           </DashboardWidget>
           <DashboardWidget title="Cajas en seguimiento" description="Sesiones abiertas con saldo negativo">
@@ -469,7 +527,7 @@ export default async function DashboardPage() {
           </DashboardWidget>
         </div>
 
-        <DashboardWidget title="PrÃ³ximos ascensos" description="Apostadores cerca del lÃ­mite de promociÃ³n">
+        <DashboardWidget title="Próximos ascensos" description="Apostadores cerca del límite de promoción">
           <SimpleList items={upcomingPromotionItems} emptyMessage="No hay apostadores cercanos al ascenso." />
         </DashboardWidget>
       </>
@@ -487,5 +545,9 @@ export default async function DashboardPage() {
     </section>
   );
 }
+
+
+
+
 
 

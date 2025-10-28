@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { payTicketAction } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type PaymentTicket = {
@@ -18,6 +19,8 @@ export type PaymentTicket = {
   monto: number;
   cuota: number | null;
   payout: number;
+  fee: number;
+  net: number;
   createdAt: string;
 };
 
@@ -102,14 +105,16 @@ export function PaymentsManager({ data }: PaymentsManagerProps) {
                     </p>
                     <p className="text-xs text-muted-foreground">Alias: {ticket.alias}</p>
                   </div>
-                  <div className="text-sm text-muted-foreground">
-                    <div>Monto: {ticket.monto.toLocaleString()} USD</div>
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    <div>Monto apostado: ${formatCurrency(ticket.monto)}</div>
                     <div>
                       {ticket.mercadoTipo === "ODDS"
                         ? `Cuota: ${ticket.cuota?.toFixed(2) ?? "--"}`
                         : "Modo POOL"}
                     </div>
-                    <div>Payout: {ticket.payout.toLocaleString()} USD</div>
+                    <div>Payout bruto: ${formatCurrency(ticket.payout)}</div>
+                    <div>Comision 5%: ${formatCurrency(ticket.fee)}</div>
+                    <div className="font-semibold text-foreground">Total a entregar: ${formatCurrency(ticket.net)}</div>
                   </div>
                   <div className="flex justify-end">
                     <Button
@@ -130,5 +135,9 @@ export function PaymentsManager({ data }: PaymentsManagerProps) {
     </div>
   );
 }
+
+
+
+
 
 

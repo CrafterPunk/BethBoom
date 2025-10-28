@@ -1,12 +1,13 @@
-﻿"use client";
+"use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { addOptionAction, createMarketAction, updateMarketStatusAction, updateOptionOddsAction } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const MARKET_TYPES = ["POOL", "ODDS"] as const;
@@ -100,8 +101,15 @@ export function MarketsManager({ data }: MarketsManagerProps) {
   const [winnerState, setWinnerState] = useState<Record<string, string>>({});
   const [optionOddsDraft, setOptionOddsDraft] = useState<Record<string, string>>({});
   const [messageMap, setMessageMap] = useState<Record<string, { message: string; isError: boolean }>>({});
+  const [now, setNow] = useState(() => Date.now());
+
 
   const oddsDraftValues = useMemo(() => optionOddsDraft, [optionOddsDraft]);
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
 
   const resetForm = () => {
     setFormState((prev) => ({
@@ -515,25 +523,42 @@ export function MarketsManager({ data }: MarketsManagerProps) {
           markets.map((market) => {
             const marketMessage = messageMap[market.id];
             const pendingForMarket = statusPendingId === market.id;
+            const endsAtTime = market.endsAt ? new Date(market.endsAt).getTime() : null;
+            const remainingMs = endsAtTime ? Math.max(endsAtTime - now, 0) : null;
+            const isExpired = remainingMs !== null && remainingMs <= 0;
+            const visualState: MarketEstado =
+              market.estado === "CERRADO"
+                ? "CERRADO"
+                : market.estado === "SUSPENDIDO" || isExpired
+                  ? "SUSPENDIDO"
+                  : "ABIERTO";
+            const timeLabel = formatDuration(remainingMs);
             return (
               <Card key={market.id} className="border-border/60 bg-card/80">
                 <CardHeader className="space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <CardTitle className="text-lg text-foreground">{market.nombre}</CardTitle>
-                    <span
-                      className={cn(
-                        "rounded-full px-3 py-1 text-xs font-medium",
-                        market.estado === "ABIERTO"
-                          ? "bg-emerald-500/20 text-emerald-300"
-                          : market.estado === "SUSPENDIDO"
-                            ? "bg-amber-500/20 text-amber-300"
-                            : "bg-rose-500/20 text-rose-300",
-                      )}
-                    >
-                      {market.estado}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <CardTitle className="text-lg text-foreground">{market.nombre}</CardTitle>
+                      <CardDescription>{market.descripcion}</CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "rounded-full px-3 py-1 text-xs font-medium",
+                          visualState === "ABIERTO"
+                            ? "bg-emerald-500/20 text-emerald-300"
+                            : visualState === "SUSPENDIDO"
+                              ? "bg-amber-500/20 text-amber-300"
+                              : "bg-rose-500/20 text-rose-300",
+                        )}
+                      >
+                        {visualState}
+                      </span>
+                      <span className="rounded-full bg-muted/40 px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                        {timeLabel}
+                      </span>
+                    </div>
                   </div>
-                  <CardDescription>{market.descripcion}</CardDescription>
                   <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                     <span>Tipo: {market.tipo}</span>
                     <span>Fee: {market.feePct.toFixed(2)}%</span>
@@ -710,6 +735,10 @@ function AddOptionInline({ market, pending, onSubmit }: AddOptionInlineProps) {
     </div>
   );
 }
+
+
+
+
 
 
 

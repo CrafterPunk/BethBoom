@@ -9,6 +9,7 @@ import {
   Banknote,
   ChartPie,
   ClipboardList,
+  ExternalLink,
   Factory,
   FileText,
   LineChart,
@@ -210,6 +211,17 @@ export function AppShell({ session, children }: AppShellProps) {
               </div>
             ) : null}
             <Button
+              asChild
+              size="sm"
+              variant="secondary"
+              className="mt-3 w-full justify-start gap-2"
+            >
+              <Link href="/public/markets" target="_blank" rel="noreferrer">
+                <ExternalLink className="h-4 w-4" />
+                Mercados públicos
+              </Link>
+            </Button>
+            <Button
               size="sm"
               variant="ghost"
               className="mt-3 w-full justify-start gap-2"
@@ -228,10 +240,18 @@ export function AppShell({ session, children }: AppShellProps) {
             <p className="text-base font-semibold text-foreground">BethBoom</p>
             <p className="text-xs text-muted-foreground">{roleLabels[session.role]}</p>
           </div>
-          <Button size="sm" variant="ghost" className="gap-2" onClick={handleLogout} disabled={pending}>
-            <LogOut className="h-4 w-4" />
-            Salir
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" variant="secondary" className="gap-2">
+              <Link href="/public/markets" target="_blank" rel="noreferrer">
+                <ExternalLink className="h-4 w-4" />
+                Públicos
+              </Link>
+            </Button>
+            <Button size="sm" variant="ghost" className="gap-2" onClick={handleLogout} disabled={pending}>
+              <LogOut className="h-4 w-4" />
+              Salir
+            </Button>
+          </div>
         </header>
         <div className="flex-1 overflow-y-auto pb-12">
           <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">{children}</div>
@@ -240,3 +260,7 @@ export function AppShell({ session, children }: AppShellProps) {
     </div>
   );
 }
+
+
+
+

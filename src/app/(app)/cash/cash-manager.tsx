@@ -12,8 +12,9 @@ import {
 } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Label } from "@/components/ui/label";
+import { formatCurrency, formatDeltaMessage, parseDigitsAmount } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type Tone = "positive" | "negative" | "warning" | "neutral";
@@ -24,9 +25,6 @@ const VALUE_TONE_CLASSES: Record<Tone, string> = {
   warning: "text-amber-300",
   neutral: "text-foreground",
 };
-
-const formatCurrency = (value: number) =>
-  value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
 function computeLiquidacion(
   capitalPropio: number,
@@ -55,27 +53,33 @@ function computeLiquidacion(
 function summarizeLiquidacion(
   tipo: CajaLiquidacionTipo,
   monto: number,
-): { label: string; tone: Tone; hint?: string } {
-  if (monto <= 0 || tipo === "BALANCEADO") {
+): { label: string; tone: Tone; hint?: string; delta: number } {
+  const delta = tipo === "WORKER_OWES" ? monto : tipo === "HQ_OWES" ? -monto : 0;
+  const message = formatDeltaMessage(delta);
+
+  if (delta === 0) {
     return {
-      label: "Balanceado",
+      label: message,
       tone: "neutral",
       hint: "No hay transferencias pendientes.",
+      delta,
     };
   }
 
   if (tipo === "WORKER_OWES") {
     return {
-      label: `Debes entregar $${formatCurrency(monto)}`,
+      label: message,
       tone: "negative",
       hint: "Transfiere ese monto a la sede para cerrar la jornada.",
+      delta,
     };
   }
 
   return {
-    label: `La sede te debe $${formatCurrency(monto)}`,
+    label: message,
     tone: "warning",
-    hint: "Solicita la reposición desde central antes de continuar.",
+    hint: "Solicita la reposicion desde central antes de continuar.",
+    delta,
   };
 }
 
@@ -83,7 +87,7 @@ type SummaryCardProps = {
   label: string;
   value: ReactNode;
   tone?: Tone;
-  hint?: string;
+  hint?: ReactNode;
   className?: string;
 };
 
@@ -92,7 +96,11 @@ function SummaryCard({ label, value, tone = "neutral", hint, className }: Summar
     <div className={cn("rounded-lg border border-border/30 bg-background/60 p-4 text-sm", className)}>
       <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
       <p className={cn("mt-2 text-lg font-semibold", VALUE_TONE_CLASSES[tone])}>{value}</p>
-      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+      {hint ? (typeof hint === "string" ? (
+        <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+      ) : (
+        <div className="mt-2">{hint}</div>
+      )) : null}
     </div>
   );
 }
@@ -165,7 +173,7 @@ export function CashManager({ data }: CashManagerProps) {
   } = data;
   const router = useRouter();
 
-  const [capitalAmount, setCapitalAmount] = useState(() => (session?.capitalPropio ?? 0).toString());
+  const [capitalDigits, setCapitalDigits] = useState(() => (session?.capitalPropio ?? 0).toString());
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [message, setMessage] = useState<MessageState | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -175,9 +183,9 @@ export function CashManager({ data }: CashManagerProps) {
 
   useEffect(() => {
     if (session) {
-      setCapitalAmount((session.capitalPropio ?? 0).toString());
+      setCapitalDigits((session.capitalPropio ?? 0).toString());
     }
-  }, [session?.id, session?.capitalPropio]);
+  }, [session]);
 
   useEffect(() => {
     if (defaultFranquiciaId) {
@@ -198,7 +206,7 @@ export function CashManager({ data }: CashManagerProps) {
   const handleOpen = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canOpen) return;
-    const capitalPropio = Number.parseInt(capitalAmount, 10) || 0;
+    const capitalPropio = parseDigitsAmount(capitalDigits) ?? 0;
     startTransition(async () => {
       if (canChooseFranquicia && !selectedFranquiciaId) {
         setMessage({ content: "Selecciona la franquicia para abrir la caja.", variant: "error" });
@@ -317,13 +325,11 @@ export function CashManager({ data }: CashManagerProps) {
               ) : null}
               <div className="space-y-2">
                 <Label htmlFor="capital-propio">Capital propio (USD)</Label>
-                <Input
+                <CurrencyInput
                   id="capital-propio"
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={capitalAmount}
-                  onChange={(event) => setCapitalAmount(event.target.value)}
+                  value={capitalDigits}
+                  onValueChange={setCapitalDigits}
+                  placeholder="1,000"
                   required
                   disabled={!canOpen || isPending}
                 />
@@ -346,12 +352,20 @@ export function CashManager({ data }: CashManagerProps) {
                 <SummaryCard
                   label="Ventas del dia"
                   value={`$${formatCurrency(session.ventasTotal)}`}
-                  hint={`${session.ventasCount} ticket${session.ventasCount === 1 ? "" : "s"}`}
+                  hint={
+                  <span className="inline-flex items-center rounded-full bg-muted/30 px-2 py-0.5 font-medium text-muted-foreground">
+                    {session.ventasCount} ticket{session.ventasCount === 1 ? "" : "s"}
+                  </span>
+                }
                 />
                 <SummaryCard
                   label="Pagos del dia"
                   value={`$${formatCurrency(session.pagosTotal)}`}
-                  hint={`${session.pagosCount} pago${session.pagosCount === 1 ? "" : "s"}`}
+                  hint={
+                  <span className="inline-flex items-center rounded-full bg-muted/30 px-2 py-0.5 font-medium text-muted-foreground">
+                    {session.pagosCount} pago{session.pagosCount === 1 ? "" : "s"}
+                  </span>
+                }
                 />
                 <SummaryCard
                   label="Saldo disponible"
@@ -450,12 +464,20 @@ export function CashManager({ data }: CashManagerProps) {
                       <SummaryCard
                         label="Ventas"
                         value={`$${formatCurrency(item.ventasTotal)}`}
-                        hint={`${item.ventasCount} ticket${item.ventasCount === 1 ? "" : "s"}`}
+                        hint={
+                        <span className="inline-flex items-center rounded-full bg-muted/30 px-2 py-0.5 font-medium text-muted-foreground">
+                          {item.ventasCount} ticket{item.ventasCount === 1 ? "" : "s"}
+                        </span>
+                      }
                       />
                       <SummaryCard
                         label="Pagos"
                         value={`$${formatCurrency(item.pagosTotal)}`}
-                        hint={`${item.pagosCount} pago${item.pagosCount === 1 ? "" : "s"}`}
+                        hint={
+                        <span className="inline-flex items-center rounded-full bg-muted/30 px-2 py-0.5 font-medium text-muted-foreground">
+                          {item.pagosCount} pago{item.pagosCount === 1 ? "" : "s"}
+                        </span>
+                      }
                       />
                       <SummaryCard label="Saldo disponible" value={`$${formatCurrency(item.saldoDisponible)}`} />
                       <SummaryCard
@@ -493,3 +515,17 @@ export function CashManager({ data }: CashManagerProps) {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+

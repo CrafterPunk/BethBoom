@@ -66,7 +66,7 @@ type ApostadorHistory = {
 const TICKET_STATE_STYLES: Record<TicketEstado, { label: string; tone: "text-muted-foreground" | "text-emerald-300" | "text-amber-300" | "text-red-400" }> = {
   ACTIVO: { label: "Pendiente", tone: "text-amber-300" },
   PAGADO: { label: "Pagado", tone: "text-emerald-300" },
-  VENCIDO: { label: "Vencido", tone: "text-red-400" },
+  VENCIDO: { label: "Perdido", tone: "text-red-400" },
   ANULADO: { label: "Anulado", tone: "text-muted-foreground" },
 };
 
@@ -547,7 +547,7 @@ export function ApostadoresManager({ data }: ApostadoresManagerProps) {
                       <table className="min-w-full text-xs md:text-sm">
                         <thead className="text-muted-foreground">
                           <tr>
-                            <th className="px-2 py-1 text-left font-medium">C�digo</th>
+                            <th className="px-2 py-1 text-left font-medium">Código</th>
                             <th className="px-2 py-1 text-left font-medium">Mercado</th>
                             <th className="px-2 py-1 text-left font-medium">Monto</th>
                             <th className="px-2 py-1 text-left font-medium">Estado</th>
@@ -669,5 +669,6 @@ export function ApostadoresManager({ data }: ApostadoresManagerProps) {
     </div>
   );
 }
+
 
 

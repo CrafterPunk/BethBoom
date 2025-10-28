@@ -1,12 +1,17 @@
-Ôªø"use client";
+"use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Copy } from "lucide-react";
 
 import { createTicketAction, type TicketActionResponse } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/ui/toast";
+import { formatCurrency, formatDuration, parseDigitsAmount } from "@/lib/format";
+import { useCountdown } from "@/lib/hooks/use-countdown";
 import { cn } from "@/lib/utils";
 
 type SalesOption = {
@@ -21,6 +26,7 @@ type SalesMarket = {
   nombre: string;
   tipo: "POOL" | "ODDS";
   descripcion: string;
+  estado: "ABIERTO" | "SUSPENDIDO" | "CERRADO";
   endsAt: string | null;
   timeRemainingMs: number | null;
   opciones: SalesOption[];
@@ -56,30 +62,12 @@ type ConfirmationState = {
 type MessageState = {
   content: string;
   variant: "success" | "error" | "info";
+  copyValue?: string;
 };
-
-function formatTimeRemaining(value: number | null) {
-  if (value === null) {
-    return "Sin fecha de cierre";
-  }
-  if (value <= 0) {
-    return "Mercado vencido";
-  }
-  const totalSeconds = Math.ceil(value / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s restantes`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s restantes`;
-  }
-  return `${seconds}s restantes`;
-}
 
 export function SalesManager({ data }: SalesManagerProps) {
   const { markets, rankRules, promotionEvery, canSell } = data;
+  const toast = useToast();
 
   const [selectedMarketId, setSelectedMarketId] = useState(() => {
     const firstActive = markets.find((market) => market.timeRemainingMs === null || market.timeRemainingMs > 0);
@@ -90,19 +78,26 @@ export function SalesManager({ data }: SalesManagerProps) {
     return firstActive?.opciones[0]?.id ?? markets[0]?.opciones[0]?.id ?? "";
   });
   const [alias, setAlias] = useState("");
-  const [monto, setMonto] = useState("1000");
+  const [amountDigits, setAmountDigits] = useState("1000");
   const [message, setMessage] = useState<MessageState | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationState | null>(null);
   const [pending, startTransition] = useTransition();
 
   const selectedMarket = useMemo(() => markets.find((item) => item.id === selectedMarketId) ?? null, [markets, selectedMarketId]);
-  const selectedOption = useMemo(() => selectedMarket?.opciones.find((item) => item.id === selectedOptionId) ?? null, [selectedMarket, selectedOptionId]);
-  const isMarketExpired =
-    selectedMarket?.timeRemainingMs !== null && (selectedMarket?.timeRemainingMs ?? 0) <= 0;
+  const selectedOption = useMemo(
+    () => selectedMarket?.opciones.find((item) => item.id === selectedOptionId) ?? null,
+    [selectedMarket, selectedOptionId],
+  );
+  const { remainingMs: selectedRemainingMs, isElapsed: isSelectedElapsed } = useCountdown(
+    selectedMarket?.endsAt ?? null,
+    selectedMarket?.timeRemainingMs ?? null,
+  );
+  const isMarketSuspended = selectedMarket?.estado === "SUSPENDIDO" || isSelectedElapsed;
+  const selectedTimeLabel = formatDuration(selectedRemainingMs);
 
   const resetForm = () => {
     setAlias("");
-    setMonto("1000");
+    setAmountDigits("1000");
     const firstActive = markets.find((market) => market.timeRemainingMs === null || market.timeRemainingMs > 0) ?? markets[0];
     setSelectedMarketId(firstActive?.id ?? "");
     setSelectedOptionId(firstActive?.opciones[0]?.id ?? "");
@@ -131,11 +126,31 @@ export function SalesManager({ data }: SalesManagerProps) {
       handleResponse(response, payload);
     });
   };
+  const handleCopyCode = async (code: string) => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(code);
+        toast.push({ message: "CÛdigo copiado", intent: "success" });
+      } else {
+        throw new Error("clipboard_unavailable");
+      }
+    } catch {
+      toast.push({ message: "No se pudo copiar el cÛdigo", intent: "error" });
+    }
+  };
 
-  const handleResponse = (response: TicketActionResponse, basePayload: { marketId: string; optionId: string; alias: string; monto: number }) => {
+
+  const handleResponse = (
+    response: TicketActionResponse,
+    basePayload: { marketId: string; optionId: string; alias: string; monto: number },
+  ) => {
     if (response.status === "success") {
       setConfirmation(null);
-      setMessage({ content: `${response.message}. Codigo: ${response.data.codigo}`, variant: "success" });
+      setMessage({
+        content: `Ticket creado: ${response.data.codigo}`,
+        variant: "success",
+        copyValue: response.data.codigo,
+      });
       resetForm();
       return;
     }
@@ -161,13 +176,13 @@ export function SalesManager({ data }: SalesManagerProps) {
       return;
     }
 
-    if (isMarketExpired) {
-      setMessage({ content: "Este mercado ya venci√≥. Refresca para ver los activos.", variant: "error" });
+    if (isMarketSuspended) {
+      setMessage({ content: "Este mercado ya no admite nuevas apuestas.", variant: "error" });
       return;
     }
 
-    const montoValue = Number.parseInt(monto, 10);
-    if (Number.isNaN(montoValue) || montoValue <= 0) {
+    const montoValue = parseDigitsAmount(amountDigits);
+    if (!montoValue || montoValue <= 0) {
       setMessage({ content: "Monto invalido", variant: "error" });
       return;
     }
@@ -212,7 +227,7 @@ export function SalesManager({ data }: SalesManagerProps) {
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={selectedMarketId}
                   onChange={(event) => handleMarketChange(event.target.value)}
-                  disabled={!canSell || pending}
+                  disabled={!canSell || pending || isMarketSuspended}
                 >
                   {markets.map((market) => (
                     <option key={market.id} value={market.id}>
@@ -221,9 +236,29 @@ export function SalesManager({ data }: SalesManagerProps) {
                   ))}
                 </select>
                 {selectedMarket ? (
-                  <p className={cn("text-xs", isMarketExpired ? "text-destructive" : "text-muted-foreground")}> 
-                    {formatTimeRemaining(selectedMarket.timeRemainingMs)}
-                  </p>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-1 font-semibold uppercase tracking-wide",
+                          isMarketSuspended ? "bg-amber-500/20 text-amber-200" : "bg-emerald-500/20 text-emerald-200",
+                        )}
+                      >
+                        {isMarketSuspended ? "Suspendido" : "Abierto"}
+                      </span>
+                      <span
+                        className={cn(
+                          "rounded-full bg-muted/40 px-2 py-1",
+                          isMarketSuspended ? "text-amber-300" : "text-muted-foreground",
+                        )}
+                      >
+                        {selectedTimeLabel}
+                      </span>
+                    </div>
+                    {selectedMarket.descripcion ? (
+                      <p className="text-muted-foreground">{selectedMarket.descripcion}</p>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
 
@@ -234,7 +269,7 @@ export function SalesManager({ data }: SalesManagerProps) {
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={selectedOptionId}
                   onChange={(event) => setSelectedOptionId(event.target.value)}
-                  disabled={!canSell || pending || !selectedMarket || isMarketExpired}
+                  disabled={!canSell || pending || !selectedMarket || isMarketSuspended}
                 >
                   {selectedMarket?.opciones.map((option) => (
                     <option key={option.id} value={option.id}>
@@ -255,37 +290,45 @@ export function SalesManager({ data }: SalesManagerProps) {
                   value={alias}
                   onChange={(event) => setAlias(event.target.value)}
                   required
-                  disabled={!canSell || pending}
+                  disabled={!canSell || pending || isMarketSuspended}
                 />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="amount">Monto (USD)</Label>
-                <Input
+                <CurrencyInput
                   id="amount"
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={monto}
-                  onChange={(event) => setMonto(event.target.value)}
+                  value={amountDigits}
+                  onValueChange={setAmountDigits}
+                  placeholder="1,000"
                   required
-                  disabled={!canSell || pending}
+                  disabled={!canSell || pending || isMarketSuspended}
                 />
               </div>
 
               {message ? (
-                <p
+                <div
                   className={cn(
-                    "text-sm",
+                    "flex items-center gap-2 rounded-md border px-3 py-2 text-sm",
                     message.variant === "success"
-                      ? "text-emerald-400"
+                      ? "border-emerald-500/40 bg-emerald-900/30 text-emerald-100"
                       : message.variant === "info"
-                        ? "text-amber-300"
-                        : "text-destructive",
+                        ? "border-amber-500/40 bg-amber-900/30 text-amber-100"
+                        : "border-destructive/50 bg-destructive/10 text-destructive",
                   )}
                 >
-                  {message.content}
-                </p>
+                  <span className="flex-1">{message.content}</span>
+                  {message.copyValue ? (
+                    <button
+                      type="button"
+                      className="rounded-md border border-border/40 bg-background/20 p-1 text-xs text-muted-foreground transition hover:bg-background/40"
+                      onClick={() => handleCopyCode(message.copyValue ?? "")}
+                      aria-label="Copiar cÛdigo del ticket"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
 
               {confirmation ? (
@@ -308,7 +351,7 @@ export function SalesManager({ data }: SalesManagerProps) {
                 <Button type="button" variant="ghost" onClick={resetForm} disabled={pending}>
                   Limpiar
                 </Button>
-                <Button type="submit" disabled={!canSell || pending || isMarketExpired}>
+                <Button type="submit" disabled={!canSell || pending || isMarketSuspended}>
                   {pending ? "Registrando..." : "Registrar ticket"}
                 </Button>
               </div>
@@ -331,7 +374,7 @@ export function SalesManager({ data }: SalesManagerProps) {
                     {rule.orden}. {rule.nombre}
                   </span>
                   <span>
-                    {rule.minMonto.toLocaleString()} - {rule.maxMonto.toLocaleString()} USD
+                    {formatCurrency(rule.minMonto)} - {formatCurrency(rule.maxMonto)} USD
                   </span>
                 </div>
               ))}
@@ -351,33 +394,7 @@ export function SalesManager({ data }: SalesManagerProps) {
           ) : (
             <div className="grid gap-4">
               {markets.map((market) => (
-                <div key={market.id} className="rounded-lg border border-border/30 bg-background/40 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-foreground">
-                      {market.nombre} ({market.tipo})
-                    </p>
-                    <div className="text-right text-xs">
-                      <p className="text-muted-foreground">{market.descripcion}</p>
-                      <p className={cn(market.timeRemainingMs !== null && market.timeRemainingMs <= 0 ? "text-destructive" : "text-muted-foreground")}> 
-                        {formatTimeRemaining(market.timeRemainingMs)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-3 grid gap-2 text-sm text-muted-foreground">
-                    {market.opciones.map((option) => (
-                      <div key={option.id} className="flex items-center justify-between rounded border border-border/20 px-3 py-2">
-                        <span>{option.nombre}</span>
-                        {market.tipo === "ODDS" ? (
-                          <span>
-                            {option.cuotaActual?.toFixed(2) ?? option.cuotaInicial?.toFixed(2) ?? "--"}
-                          </span>
-                        ) : (
-                          <span>POOL</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <SalesMarketSummary key={market.id} market={market} />
               ))}
             </div>
           )}
@@ -386,13 +403,58 @@ export function SalesManager({ data }: SalesManagerProps) {
     </div>
   );
 }
+const SALES_TYPE_LABELS: Record<SalesMarket["tipo"], string> = {
+  POOL: "Pozo compartido",
+  ODDS: "Cuotas din·micas",
+};
 
+function SalesMarketSummary({ market }: { market: SalesMarket }) {
+  const { remainingMs, isElapsed } = useCountdown(market.endsAt ?? null, market.timeRemainingMs ?? null);
+  const isSuspended = market.estado === "SUSPENDIDO" || isElapsed;
+  const timerLabel = formatDuration(remainingMs);
 
-
-
-
-
-
+  return (
+    <div className="rounded-lg border border-border/30 bg-background/40 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-semibold text-foreground">{market.nombre}</p>
+          <p className="text-xs text-muted-foreground">{SALES_TYPE_LABELS[market.tipo]}</p>
+        </div>
+        <div className="flex flex-col items-end gap-1 text-xs">
+          <span
+            className={cn(
+              "rounded-full px-2 py-1 font-semibold uppercase tracking-wide",
+              isSuspended ? "bg-amber-500/20 text-amber-200" : "bg-emerald-500/20 text-emerald-200",
+            )}
+          >
+            {isSuspended ? "Suspendido" : "Abierto"}
+          </span>
+          <span
+            className={cn(
+              "rounded-full bg-muted/40 px-2 py-1",
+              isSuspended ? "text-amber-300" : "text-muted-foreground",
+            )}
+          >
+            {timerLabel}
+          </span>
+        </div>
+      </div>
+      {market.descripcion ? <p className="mt-2 text-xs text-muted-foreground">{market.descripcion}</p> : null}
+      <div className="mt-3 grid gap-2 text-sm text-muted-foreground">
+        {market.opciones.map((option) => (
+          <div key={option.id} className="flex items-center justify-between rounded border border-border/20 px-3 py-2">
+            <span>{option.nombre}</span>
+            {market.tipo === "ODDS" ? (
+              <span>{option.cuotaActual?.toFixed(2) ?? option.cuotaInicial?.toFixed(2) ?? "--"}</span>
+            ) : (
+              <span>Pozo compartido</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 
 

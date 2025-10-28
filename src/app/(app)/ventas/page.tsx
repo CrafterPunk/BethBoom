@@ -53,6 +53,7 @@ export default async function SalesPage() {
       nombre: market.nombre,
       descripcion: market.descripcion,
       tipo: market.tipo,
+      estado: market.estado,
       endsAt: market.endsAt ? market.endsAt.toISOString() : null,
       timeRemainingMs,
       opciones: market.opciones.map((option) => ({
