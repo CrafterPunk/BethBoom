@@ -130,12 +130,12 @@ export function SalesManager({ data }: SalesManagerProps) {
     try {
       if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(code);
-        toast.push({ message: "Código copiado", intent: "success" });
+        toast.push({ message: "CÃ³digo copiado", intent: "success" });
       } else {
         throw new Error("clipboard_unavailable");
       }
     } catch {
-      toast.push({ message: "No se pudo copiar el código", intent: "error" });
+      toast.push({ message: "No se pudo copiar el cÃ³digo", intent: "error" });
     }
   };
 
@@ -323,7 +323,7 @@ export function SalesManager({ data }: SalesManagerProps) {
                       type="button"
                       className="rounded-md border border-border/40 bg-background/20 p-1 text-xs text-muted-foreground transition hover:bg-background/40"
                       onClick={() => handleCopyCode(message.copyValue ?? "")}
-                      aria-label="Copiar código del ticket"
+                      aria-label="Copiar cÃ³digo del ticket"
                     >
                       <Copy className="h-4 w-4" />
                     </button>
@@ -405,7 +405,7 @@ export function SalesManager({ data }: SalesManagerProps) {
 }
 const SALES_TYPE_LABELS: Record<SalesMarket["tipo"], string> = {
   POOL: "Pozo compartido",
-  ODDS: "Cuotas dinámicas",
+  ODDS: "Cuotas dinÃ¡micas",
 };
 
 function SalesMarketSummary({ market }: { market: SalesMarket }) {

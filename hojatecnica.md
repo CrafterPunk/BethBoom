@@ -312,3 +312,4 @@
 * **Pagos**: al liquidar un ticket ganador se calcula comision 5%, se muestra desglose (payout bruto, comision, total a entregar) y el total neto registrado en caja.
 * **Historial de apuestas**: tickets perdedores aparecen como "Perdido" en rojo; pagados permanecen en verde.
 * **Toast global**: se incluye `ToastProvider` y hook `useToast` para notificaciones reutilizables en cliente.
+* **Build**: se normalizaron archivos `ventas`/layout en UTF-8 + LF, se añadieron `.editorconfig` y `.gitattributes` para forzar codificacion/line endings coherentes y desbloquear el deploy.

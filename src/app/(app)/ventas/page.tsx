@@ -1,4 +1,4 @@
-﻿import { MercadoEstado, Prisma, UserRole } from "@prisma/client";
+import { MercadoEstado, Prisma, UserRole } from "@prisma/client";
 
 import { requireSession } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";

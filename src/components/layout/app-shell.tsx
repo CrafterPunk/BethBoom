@@ -218,7 +218,7 @@ export function AppShell({ session, children }: AppShellProps) {
             >
               <Link href="/public/markets" target="_blank" rel="noreferrer">
                 <ExternalLink className="h-4 w-4" />
-                Mercados públicos
+                Mercados pÃºblicos
               </Link>
             </Button>
             <Button
@@ -244,7 +244,7 @@ export function AppShell({ session, children }: AppShellProps) {
             <Button asChild size="sm" variant="secondary" className="gap-2">
               <Link href="/public/markets" target="_blank" rel="noreferrer">
                 <ExternalLink className="h-4 w-4" />
-                Públicos
+                PÃºblicos
               </Link>
             </Button>
             <Button size="sm" variant="ghost" className="gap-2" onClick={handleLogout} disabled={pending}>
