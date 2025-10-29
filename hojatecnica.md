@@ -328,3 +328,4 @@
 * **Landing publica**: redisenada con nuevo gradiente BethBoom, carrusel de promos, estadisticas rapidas, filtros por modalidad y cards con informacion expandible.
 * **Parametros**: se remueve `ticket_limits_default` de la configuracion global para evitar confusion (solo permanecen los parametros activos).
 * **Documentacion**: se aclara que la fecha de vencimiento de tickets se calcula closedAt + 7 dias salvo override manual.
+* **Market Maker UX**: el rol puede abrir caja, acceder al dashboard y es seleccionable desde Admin > Usuarios.

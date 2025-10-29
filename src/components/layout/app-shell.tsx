@@ -51,7 +51,7 @@ const NAV_ITEMS: NavItem[] = [
     href: "/dashboard",
     label: "Dashboard",
     icon: LineChart,
-    roles: ["ADMIN_GENERAL", "TRABAJADOR", "AUDITOR_GENERAL", "AUDITOR_FRANQUICIA"],
+    roles: ["ADMIN_GENERAL", "TRABAJADOR", "MARKET_MAKER", "AUDITOR_GENERAL", "AUDITOR_FRANQUICIA"],
   },
   {
     key: "ventas",

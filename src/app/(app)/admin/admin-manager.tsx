@@ -19,6 +19,7 @@ import {
 const roleLabels: Record<string, string> = {
   ADMIN_GENERAL: "Admin",
   TRABAJADOR: "Trabajador",
+  MARKET_MAKER: "Market Maker",
   AUDITOR_GENERAL: "Auditor",
   AUDITOR_FRANQUICIA: "Auditor Sede",
 };
@@ -318,13 +319,14 @@ export function AdminManager({ data }: AdminManagerProps) {
               <select
                 id="role"
                 name="role"
-                className="mt-1 h-10 w-full rounded-md border border-border/60 bg-background/60 px-3 text-sm"
-              >
-                <option value="TRABAJADOR">Trabajador</option>
-                <option value="ADMIN_GENERAL">Admin</option>
-                <option value="AUDITOR_GENERAL">Auditor General</option>
-                <option value="AUDITOR_FRANQUICIA">Auditor Sede</option>
-              </select>
+              className="mt-1 h-10 w-full rounded-md border border-border/60 bg-background/60 px-3 text-sm"
+            >
+              <option value="TRABAJADOR">Trabajador</option>
+              <option value="ADMIN_GENERAL">Admin</option>
+              <option value="MARKET_MAKER">Market Maker</option>
+              <option value="AUDITOR_GENERAL">Auditor General</option>
+              <option value="AUDITOR_FRANQUICIA">Auditor Sede</option>
+            </select>
             </div>
             <div>
               <Label htmlFor="accessCode">AccessCode</Label>

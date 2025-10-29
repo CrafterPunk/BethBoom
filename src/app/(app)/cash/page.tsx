@@ -191,7 +191,10 @@ export default async function CashPage() {
       data={{
         session: sessionDto,
         pending: pendingDtos,
-        canOpen: session.role === UserRole.ADMIN_GENERAL || session.role === UserRole.TRABAJADOR,
+        canOpen:
+          session.role === UserRole.ADMIN_GENERAL ||
+          session.role === UserRole.TRABAJADOR ||
+          session.role === UserRole.MARKET_MAKER,
         canApprove: isAdmin,
         canChooseFranquicia: isAdmin,
         franquicias: franquiciaOptions,
