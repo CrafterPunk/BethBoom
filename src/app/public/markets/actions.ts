@@ -5,6 +5,8 @@ import { MercadoTipo } from "@prisma/client";
 
 import prisma from "@/lib/prisma";
 
+const ONE_WEEK_MS = 1000 * 60 * 60 * 24 * 7;
+
 const searchSchema = z.object({
   code: z.string().trim().min(4).max(60),
 });
@@ -16,6 +18,7 @@ export type PublicTicketResult =
       ticket: {
         codigo: string;
         estado: string;
+        uiEstado: "PENDIENTE" | "GANADOR_PENDIENTE" | "CERRADO_PERDIDO" | "PAGADO" | "PERDIDO" | "ANULADO";
         monto: number;
         mercado: {
           nombre: string;
@@ -49,6 +52,8 @@ export async function searchTicketAction(input: unknown): Promise<PublicTicketRe
           tipo: true,
           estado: true,
           endsAt: true,
+          closedAt: true,
+          ganadoraId: true,
         },
       },
       opcion: {
@@ -71,6 +76,33 @@ export async function searchTicketAction(input: unknown): Promise<PublicTicketRe
     return { status: "not-found" };
   }
 
+  const closedAt = ticket.mercado.closedAt;
+  const defaultExpiry = closedAt ? new Date(closedAt.getTime() + ONE_WEEK_MS) : null;
+  const venceAt = ticket.venceAt ?? defaultExpiry;
+  const isExpired =
+    ticket.estado === "VENCIDO" ||
+    (ticket.estado === "ACTIVO" && venceAt && venceAt.getTime() < Date.now());
+  const effectiveEstado =
+    isExpired && ticket.estado === "ACTIVO" ? "VENCIDO" : ticket.estado;
+  const marketClosed = ticket.mercado.estado === "CERRADO";
+  const isWinner =
+    Boolean(ticket.mercado.ganadoraId) && ticket.mercado.ganadoraId === ticket.opcionId;
+
+  let uiEstado: "PENDIENTE" | "GANADOR_PENDIENTE" | "CERRADO_PERDIDO" | "PAGADO" | "PERDIDO" | "ANULADO";
+  if (effectiveEstado === "PAGADO") {
+    uiEstado = "PAGADO";
+  } else if (effectiveEstado === "ANULADO") {
+    uiEstado = "ANULADO";
+  } else if (effectiveEstado === "VENCIDO") {
+    uiEstado = "PERDIDO";
+  } else if (marketClosed && isWinner) {
+    uiEstado = "GANADOR_PENDIENTE";
+  } else if (marketClosed && !isWinner) {
+    uiEstado = "CERRADO_PERDIDO";
+  } else {
+    uiEstado = "PENDIENTE";
+  }
+
   const cuotaBaseRaw =
     ticket.cuotaFijada !== null
       ? Number(ticket.cuotaFijada)
@@ -91,7 +123,8 @@ export async function searchTicketAction(input: unknown): Promise<PublicTicketRe
     status: "found",
     ticket: {
       codigo: ticket.codigo,
-      estado: ticket.estado,
+      estado: effectiveEstado,
+      uiEstado,
       monto: ticket.monto,
       mercado: {
         nombre: ticket.mercado.nombre,

@@ -222,6 +222,7 @@ export default async function ApostadoresPage({
   }));
 
   const canManage = session.role === UserRole.ADMIN_GENERAL;
+  const canWriteNotes = true;
 
   return (
     <ApostadoresManager
@@ -230,6 +231,7 @@ export default async function ApostadoresPage({
         rankRules: rankRulesDto,
         tags: tagsDto,
         canManage,
+        canWriteNotes,
         total,
         query,
         promotionEvery,

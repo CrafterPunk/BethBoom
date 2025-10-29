@@ -56,7 +56,9 @@ export default async function AdminPage() {
       franquiciaNombre: user.franquicia?.nombre ?? null,
       auditorFranquiciaNombre: user.auditorFranquicia?.nombre ?? null,
     })),
-    parametros: parametros.map((parametro) => ({
+    parametros: parametros
+      .filter((parametro) => parametro.clave !== "ticket_limits_default")
+      .map((parametro) => ({
       id: parametro.id,
       clave: parametro.clave,
       descripcion: parametro.descripcion ?? null,

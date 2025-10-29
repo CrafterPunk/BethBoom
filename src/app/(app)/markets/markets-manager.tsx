@@ -50,6 +50,7 @@ type MarketsManagerProps = {
     markets: MarketDTO[];
     franquicias: Array<{ id: string; nombre: string; codigo: string }>;
     canManage: boolean;
+    canCloseMarkets: boolean;
     isOddsVisible: boolean;
   };
 };
@@ -93,7 +94,7 @@ const initialFormState: FormState = {
 };
 
 export function MarketsManager({ data }: MarketsManagerProps) {
-  const { markets, franquicias, canManage } = data;
+  const { markets, franquicias, canManage, canCloseMarkets, isOddsVisible } = data;
   const [formState, setFormState] = useState<FormState>(initialFormState);
   const [feedback, setFeedback] = useState<{ message: string; isError: boolean } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -644,6 +645,7 @@ export function MarketsManager({ data }: MarketsManagerProps) {
                             className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                             value={winnerState[market.id] ?? ""}
                             onChange={(event) => setWinnerState((prev) => ({ ...prev, [market.id]: event.target.value }))}
+                            disabled={!canCloseMarkets || pendingForMarket}
                           >
                             <option value="">Selecciona ganadora</option>
                             {market.opciones.map((option) => (
@@ -652,15 +654,19 @@ export function MarketsManager({ data }: MarketsManagerProps) {
                               </option>
                             ))}
                           </select>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => updateStatus(market.id, "CERRADO")}
-                            disabled={pendingForMarket}
-                          >
-                            Cerrar
-                          </Button>
+                          {canCloseMarkets ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => updateStatus(market.id, "CERRADO")}
+                              disabled={pendingForMarket}
+                            >
+                              Cerrar
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Solo un administrador puede cerrar el mercado.</span>
+                          )}
                         </div>
                       </div>
 
@@ -735,7 +741,6 @@ function AddOptionInline({ market, pending, onSubmit }: AddOptionInlineProps) {
     </div>
   );
 }
-
 
 
 

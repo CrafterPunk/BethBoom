@@ -11,12 +11,12 @@ export const MARKET_TYPE_INFO: Record<MercadoTipo, MarketInfo> = {
     label: "Pozo compartido",
     summary: "El premio se reparte entre quienes aciertan.",
     details:
-      "Todas las apuestas entran a un mismo fondo y, al cerrar el mercado, se reparte entre los boletos ganadores de forma proporcional. Mientras más aportes y menos ganadores haya, mayor será tu premio.",
+      "Todas las apuestas entran a un mismo fondo y, al cerrar el mercado, se reparte entre los boletos ganadores de forma proporcional. Mientras mas aportes y menos ganadores haya, mayor sera tu premio.",
   },
   ODDS: {
-    label: "Cuotas dinámicas",
-    summary: "Pagas según la cuota fijada al momento de comprar.",
+    label: "Cuotas dinamicas",
+    summary: "Pagas segun la cuota fijada al momento de comprar.",
     details:
-      "Las cuotas se ajustan según el flujo de apuestas. Al comprar un ticket, quedas amarrado a la cuota mostrada. Si aciertas, cobras tu monto multiplicado por esa cuota.",
+      "Las cuotas se ajustan segun el flujo de apuestas. Al comprar un ticket, quedas amarrado a la cuota mostrada. Si aciertas, cobras tu monto multiplicado por esa cuota.",
   },
 };

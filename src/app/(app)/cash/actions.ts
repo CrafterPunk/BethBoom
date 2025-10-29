@@ -31,7 +31,11 @@ type ActionResult = { ok: true; message: string } | { ok: false; message: string
 
 export async function openCashSessionAction(input: unknown): Promise<ActionResult> {
   const session = await requireSession();
-  if (session.role !== UserRole.TRABAJADOR && session.role !== UserRole.ADMIN_GENERAL) {
+  if (
+    session.role !== UserRole.TRABAJADOR &&
+    session.role !== UserRole.ADMIN_GENERAL &&
+    session.role !== UserRole.MARKET_MAKER
+  ) {
     return { ok: false, message: "No autorizado" };
   }
 
@@ -107,7 +111,11 @@ export async function openCashSessionAction(input: unknown): Promise<ActionResul
 
 export async function requestCashCloseAction(input: unknown): Promise<ActionResult> {
   const session = await requireSession();
-  if (session.role !== UserRole.TRABAJADOR && session.role !== UserRole.ADMIN_GENERAL) {
+  if (
+    session.role !== UserRole.TRABAJADOR &&
+    session.role !== UserRole.ADMIN_GENERAL &&
+    session.role !== UserRole.MARKET_MAKER
+  ) {
     return { ok: false, message: "No autorizado" };
   }
 

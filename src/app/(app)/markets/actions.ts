@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -52,16 +52,16 @@ const updateOptionSchema = z.object({
   cuotaActual: z.number().min(1.2).max(5),
 });
 
-function ensureIsAdmin(role: string): ActionResult {
-  if (role !== "ADMIN_GENERAL") {
-    return { ok: false, message: "Accion permitida solo para Admin General" };
+function ensureCanCreateMarket(role: string): ActionResult {
+  if (role !== "ADMIN_GENERAL" && role !== "MARKET_MAKER") {
+    return { ok: false, message: "Accion permitida solo para Admin o Market Maker" };
   }
   return { ok: true, message: "ok" };
 }
 
 export async function createMarketAction(payload: unknown): Promise<ActionResult> {
   const session = await requireSession();
-  const allowed = ensureIsAdmin(session.role);
+  const allowed = ensureCanCreateMarket(session.role);
   if (!allowed.ok) {
     return allowed;
   }
@@ -142,7 +142,7 @@ export async function createMarketAction(payload: unknown): Promise<ActionResult
 
 export async function updateMarketStatusAction(payload: unknown): Promise<ActionResult> {
   const session = await requireSession();
-  const allowed = ensureIsAdmin(session.role);
+  const allowed = ensureCanCreateMarket(session.role);
   if (!allowed.ok) {
     return allowed;
   }
@@ -156,6 +156,10 @@ export async function updateMarketStatusAction(payload: unknown): Promise<Action
   }
 
   const { marketId, estado, ganadoraId } = parsed.data;
+
+  if (session.role === "MARKET_MAKER" && estado === MercadoEstado.CERRADO) {
+    return { ok: false, message: "Solo un Admin puede cerrar y asignar ganadores." };
+  }
 
   try {
     const market = await prisma.mercado.findUnique({
@@ -216,7 +220,7 @@ export async function updateMarketStatusAction(payload: unknown): Promise<Action
 
 export async function addOptionAction(payload: unknown): Promise<ActionResult> {
   const session = await requireSession();
-  const allowed = ensureIsAdmin(session.role);
+  const allowed = ensureCanCreateMarket(session.role);
   if (!allowed.ok) {
     return allowed;
   }
@@ -280,7 +284,7 @@ export async function addOptionAction(payload: unknown): Promise<ActionResult> {
 
 export async function updateOptionOddsAction(payload: unknown): Promise<ActionResult> {
   const session = await requireSession();
-  const allowed = ensureIsAdmin(session.role);
+  const allowed = ensureCanCreateMarket(session.role);
   if (!allowed.ok) {
     return allowed;
   }
@@ -349,6 +353,7 @@ export async function updateOptionOddsAction(payload: unknown): Promise<ActionRe
   revalidatePath("/markets");
   return { ok: true, message: "Cuota actualizada" };
 }
+
 
 
 

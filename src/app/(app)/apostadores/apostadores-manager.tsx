@@ -115,6 +115,7 @@ type ApostadoresManagerProps = {
     rankRules: RankRuleItem[];
     tags: TagCatalogItem[];
     canManage: boolean;
+    canWriteNotes: boolean;
     total: number;
     query: string;
     promotionEvery: number;
@@ -145,7 +146,7 @@ function formatCurrency(value: number) {
 
 
 export function ApostadoresManager({ data }: ApostadoresManagerProps) {
-  const { apostadores, rankRules, tags, canManage, total, query, promotionEvery } = data;
+  const { apostadores, rankRules, tags, canManage, canWriteNotes, total, query, promotionEvery } = data;
   const router = useRouter();
 
   const [selectedId, setSelectedId] = useState<string | null>(apostadores[0]?.id ?? null);
@@ -609,7 +610,7 @@ export function ApostadoresManager({ data }: ApostadoresManagerProps) {
                     )}
                   </div>
 
-                  {canManage ? (
+                  {canWriteNotes ? (
                     <div className="space-y-2">
                       <textarea
                         value={noteContent}

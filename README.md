@@ -23,6 +23,16 @@ Required variables:
 - `SESSION_SECRET` - random long string for session signing
 - `ACCESS_CODE_PEPPER` - static pepper used when hashing AccessCodes
 
+### Local staging database (pooler)
+
+For local QA against the Supabase pooler, drop a `.env.local` file in the project root:
+
+```
+DATABASE_URL="postgresql://postgres.jdfnrozenkdoicaxzqtr:UMKHJ9ASaaaa@aws-1-us-east-2.pooler.supabase.com:6543/postgres?schema=bb_local_stage&pgbouncer=true&sslmode=require"
+```
+
+> `bb_local_stage` is an isolated schema reserved for local previews; switch the schema name if you need a different sandbox.
+
 ## Database
 
 Install dependencies and apply schema:

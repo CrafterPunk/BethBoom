@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { EventNotifications } from "@/components/layout/event-notifications";
 
@@ -58,35 +58,35 @@ const NAV_ITEMS: NavItem[] = [
     href: "/ventas",
     label: "Ventas",
     icon: ShoppingBag,
-    roles: ["ADMIN_GENERAL", "TRABAJADOR"],
+    roles: ["ADMIN_GENERAL", "TRABAJADOR", "MARKET_MAKER"],
   },
   {
     key: "markets",
     href: "/markets",
     label: "Mercados",
     icon: ChartPie,
-    roles: ["ADMIN_GENERAL", "TRABAJADOR", "AUDITOR_GENERAL", "AUDITOR_FRANQUICIA"],
+    roles: ["ADMIN_GENERAL", "TRABAJADOR", "MARKET_MAKER", "AUDITOR_GENERAL", "AUDITOR_FRANQUICIA"],
   },
   {
     key: "payments",
     href: "/payments",
     label: "Pagos",
     icon: Banknote,
-    roles: ["ADMIN_GENERAL", "TRABAJADOR", "AUDITOR_GENERAL"],
+    roles: ["ADMIN_GENERAL", "TRABAJADOR", "MARKET_MAKER", "AUDITOR_GENERAL"],
   },
   {
     key: "cash",
     href: "/cash",
     label: "Caja",
     icon: ReceiptText,
-    roles: ["ADMIN_GENERAL", "TRABAJADOR", "AUDITOR_GENERAL", "AUDITOR_FRANQUICIA"],
+    roles: ["ADMIN_GENERAL", "TRABAJADOR", "MARKET_MAKER", "AUDITOR_GENERAL", "AUDITOR_FRANQUICIA"],
   },
   {
     key: "apostadores",
     href: "/apostadores",
     label: "Apostadores",
     icon: Users,
-    roles: ["ADMIN_GENERAL", "TRABAJADOR", "AUDITOR_GENERAL", "AUDITOR_FRANQUICIA"],
+    roles: ["ADMIN_GENERAL", "TRABAJADOR", "MARKET_MAKER", "AUDITOR_GENERAL", "AUDITOR_FRANQUICIA"],
   },
   {
     key: "reports",
@@ -114,6 +114,7 @@ const NAV_ITEMS: NavItem[] = [
 const QUICK_LINKS: Record<AppRole, NavKey[]> = {
   ADMIN_GENERAL: ["cash", "reports", "admin"],
   TRABAJADOR: ["ventas", "cash", "payments"],
+  MARKET_MAKER: ["ventas", "markets", "cash"],
   AUDITOR_GENERAL: ["reports", "audits", "cash"],
   AUDITOR_FRANQUICIA: ["reports", "cash", "markets"],
 };
@@ -121,6 +122,7 @@ const QUICK_LINKS: Record<AppRole, NavKey[]> = {
 const roleLabels: Record<SessionPayload["role"], string> = {
   ADMIN_GENERAL: "Admin General",
   TRABAJADOR: "Trabajador",
+  MARKET_MAKER: "Market Maker",
   AUDITOR_GENERAL: "Auditor General",
   AUDITOR_FRANQUICIA: "Auditor Sede",
 };
@@ -165,6 +167,36 @@ export function AppShell({ session, children }: AppShellProps) {
             <p className="text-xs text-muted-foreground">Panel operativo V1.2</p>
           </div>
         </div>
+        <div className="space-y-3 px-4 pb-4">
+          <Button
+            asChild
+            size="sm"
+            variant="secondary"
+            className="w-full justify-start gap-2"
+          >
+            <Link href="/public/markets" target="_blank" rel="noreferrer">
+              <ExternalLink className="h-4 w-4" />
+              Mercados Publicos
+            </Link>
+          </Button>
+          {quickActions.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {quickActions.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.key}
+                    href={item.href}
+                    className="group flex items-center gap-2 rounded-md border border-border/40 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <Icon className="h-3.5 w-3.5 text-primary transition-colors group-hover:text-foreground" />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
         <nav className="flex-1 space-y-1 px-4">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
@@ -193,34 +225,6 @@ export function AppShell({ session, children }: AppShellProps) {
             {session.franquiciaId ? (
               <p className="mt-1 text-xs text-muted-foreground">Sede asignada #{session.franquiciaId.slice(0, 6)}</p>
             ) : null}
-            {quickActions.length > 0 ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {quickActions.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.key}
-                      href={item.href}
-                      className="group flex items-center gap-2 rounded-md border border-border/40 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    >
-                      <Icon className="h-3.5 w-3.5 text-primary transition-colors group-hover:text-foreground" />
-                      <span>{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            ) : null}
-            <Button
-              asChild
-              size="sm"
-              variant="secondary"
-              className="mt-3 w-full justify-start gap-2"
-            >
-              <Link href="/public/markets" target="_blank" rel="noreferrer">
-                <ExternalLink className="h-4 w-4" />
-                Mercados públicos
-              </Link>
-            </Button>
             <Button
               size="sm"
               variant="ghost"
@@ -244,7 +248,7 @@ export function AppShell({ session, children }: AppShellProps) {
             <Button asChild size="sm" variant="secondary" className="gap-2">
               <Link href="/public/markets" target="_blank" rel="noreferrer">
                 <ExternalLink className="h-4 w-4" />
-                Públicos
+                Publicos
               </Link>
             </Button>
             <Button size="sm" variant="ghost" className="gap-2" onClick={handleLogout} disabled={pending}>
@@ -260,6 +264,11 @@ export function AppShell({ session, children }: AppShellProps) {
     </div>
   );
 }
+
+
+
+
+
 
 
 

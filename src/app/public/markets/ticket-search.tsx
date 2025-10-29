@@ -17,9 +17,11 @@ const STATUS_META: Record<
     tone: string;
   }
 > = {
-  ACTIVO: { label: "Pendiente", tone: "text-amber-300" },
+  PENDIENTE: { label: "Pendiente", tone: "text-amber-300" },
+  GANADOR_PENDIENTE: { label: "Pendiente de pago", tone: "text-sky-300" },
+  CERRADO_PERDIDO: { label: "Cerrado - perdido", tone: "text-red-400" },
   PAGADO: { label: "Pagado", tone: "text-emerald-300" },
-  VENCIDO: { label: "Vencido", tone: "text-red-400" },
+  PERDIDO: { label: "Perdido", tone: "text-red-400" },
   ANULADO: { label: "Anulado", tone: "text-muted-foreground" },
 };
 
@@ -32,7 +34,7 @@ export function TicketSearch({ className }: { className?: string }) {
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!code.trim()) {
-      setError("Ingresa un código válido");
+      setError("Ingresa un codigo valido");
       setResult(null);
       return;
     }
@@ -41,7 +43,7 @@ export function TicketSearch({ className }: { className?: string }) {
       const response = await searchTicketAction({ code: code.trim() });
       setResult(response);
       if (response.status === "not-found") {
-        setError("No encontramos un ticket con ese código.");
+        setError("No encontramos un ticket con ese codigo.");
       } else {
         setError(null);
       }
@@ -54,7 +56,7 @@ export function TicketSearch({ className }: { className?: string }) {
     }
 
     const ticket = result.ticket;
-    const statusMeta = STATUS_META[ticket.estado] ?? STATUS_META.ACTIVO;
+    const statusMeta = STATUS_META[ticket.uiEstado] ?? STATUS_META.PENDIENTE;
     const typeInfo = MARKET_TYPE_INFO[ticket.mercado.tipo];
 
     return (
@@ -63,7 +65,7 @@ export function TicketSearch({ className }: { className?: string }) {
           <div>
             <p className="text-base font-semibold text-foreground">{ticket.codigo}</p>
             <p className="text-xs text-muted-foreground">
-              Registrado el {new Date(ticket.createdAt).toLocaleString()}
+              Registrado el {new Date(ticket.createdAt).toLocaleString("es-MX")}
             </p>
           </div>
           <span className={cn("rounded-full px-3 py-1 text-xs font-semibold uppercase", statusMeta.tone)}>
@@ -75,11 +77,11 @@ export function TicketSearch({ className }: { className?: string }) {
             <p className="text-xs uppercase text-muted-foreground">Mercado</p>
             <p className="text-sm font-medium text-foreground">{ticket.mercado.nombre}</p>
             <p className="text-xs text-muted-foreground">
-              {typeInfo.label} · {typeInfo.summary}
+              {typeInfo.label} - {typeInfo.summary}
             </p>
           </div>
           <div>
-            <p className="text-xs uppercase text-muted-foreground">Opción</p>
+            <p className="text-xs uppercase text-muted-foreground">Opcion</p>
             <p className="text-sm font-medium text-foreground">{ticket.opcionNombre}</p>
             {ticket.cuotaBase ? (
               <p className="text-xs text-muted-foreground">Cuota fijada: {ticket.cuotaBase.toFixed(2)}</p>
@@ -94,7 +96,11 @@ export function TicketSearch({ className }: { className?: string }) {
           <div>
             <p className="text-xs uppercase text-muted-foreground">Estado del mercado</p>
             <p className="text-sm font-medium text-foreground">
-              {ticket.mercado.estado === "SUSPENDIDO" ? "Suspendido" : ticket.mercado.estado === "CERRADO" ? "Cerrado" : "Abierto"}
+              {ticket.mercado.estado === "SUSPENDIDO"
+                ? "Suspendido"
+                : ticket.mercado.estado === "CERRADO"
+                  ? "Cerrado"
+                  : "Abierto"}
             </p>
             {ticket.mercado.endsAt ? (
               <p className="text-xs text-muted-foreground">
@@ -118,7 +124,7 @@ export function TicketSearch({ className }: { className?: string }) {
               {ticket.payoutReal !== null ? `$${formatCurrency(ticket.payoutReal)}` : "Sin pago registrado"}
             </p>
             {ticket.pagadoAt ? (
-              <p className="text-xs text-muted-foreground">Pagado el {new Date(ticket.pagadoAt).toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground">Pagado el {new Date(ticket.pagadoAt).toLocaleString("es-MX")}</p>
             ) : null}
           </div>
         </div>
@@ -130,7 +136,7 @@ export function TicketSearch({ className }: { className?: string }) {
     <Card className={cn("border-border/60 bg-card/80", className)}>
       <CardHeader>
         <CardTitle>Busca tu ticket</CardTitle>
-        <CardDescription>Ingresa el código impreso en tu ticket para revisar su estado.</CardDescription>
+        <CardDescription>Ingresa el codigo impreso en tu ticket para revisar su estado.</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="flex flex-col gap-3 sm:flex-row" onSubmit={handleSubmit}>

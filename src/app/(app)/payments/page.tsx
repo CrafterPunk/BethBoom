@@ -13,6 +13,8 @@ import prisma from "@/lib/prisma";
 
 import { PaymentsManager, type PaymentTicket } from "./payments-manager";
 
+const ONE_WEEK_MS = 1000 * 60 * 60 * 24 * 7;
+
 function numberFromDecimal(value: Prisma.Decimal | null) {
   return value ? Number(value) : null;
 }
@@ -26,6 +28,8 @@ function normalizeOdd(value: number | null) {
 
 export default async function PaymentsPage() {
   const session = await requireSession();
+
+  const now = new Date();
 
   const [tickets, activeSession] = await Promise.all([
     prisma.ticket.findMany({
@@ -107,7 +111,14 @@ export default async function PaymentsPage() {
     }, new Map<string, { total: number; ganadores: number }>());
   }
 
-  const ticketDtos = filtered.map((ticket) => {
+  const ticketDtos = filtered
+    .filter((ticket) => {
+      const closedAt = ticket.mercado.closedAt;
+      const defaultExpiry = closedAt ? new Date(closedAt.getTime() + ONE_WEEK_MS) : null;
+      const venceAt = ticket.venceAt ?? defaultExpiry;
+      return !(venceAt && venceAt.getTime() <= now.getTime());
+    })
+    .map((ticket) => {
     let cuota: number | null = null;
     let payout = 0;
 
@@ -129,9 +140,6 @@ export default async function PaymentsPage() {
       });
     }
 
-    const fee = Math.floor(payout * 0.05);
-    const net = Math.max(payout - fee, 0);
-
     return {
       id: ticket.id,
       codigo: ticket.codigo,
@@ -142,8 +150,6 @@ export default async function PaymentsPage() {
       monto: ticket.monto,
       cuota,
       payout,
-      fee,
-      net,
       createdAt: ticket.createdAt.toISOString(),
     } satisfies PaymentTicket;
   });
@@ -152,7 +158,10 @@ export default async function PaymentsPage() {
     <PaymentsManager
       data={{
         tickets: ticketDtos,
-        canPay: session.role === UserRole.ADMIN_GENERAL || session.role === UserRole.TRABAJADOR,
+        canPay:
+          session.role === UserRole.ADMIN_GENERAL ||
+          session.role === UserRole.TRABAJADOR ||
+          session.role === UserRole.MARKET_MAKER,
         hasOpenSession: Boolean(activeSession),
       }}
     />

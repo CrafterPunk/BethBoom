@@ -7,6 +7,7 @@ const ACCESS_CODES: Array<{ displayName: string; code: string; role: UserRole }>
   { displayName: "Dueno General", code: "owner-AAAA1111", role: UserRole.ADMIN_GENERAL },
   { displayName: "Vendedor HQ", code: "sell-HQ-BBBB2222", role: UserRole.TRABAJADOR },
   { displayName: "Auditor General", code: "audit-CCCC3333", role: UserRole.AUDITOR_GENERAL },
+  { displayName: "Market Maker HQ", code: "maker-DDDD3333", role: UserRole.MARKET_MAKER },
 ];
 
 const RANKS: Array<{ orden: number; nombre: string; maxMonto: number }> = [
@@ -33,11 +34,6 @@ const GLOBAL_PARAMS: Array<{ clave: string; valor: Prisma.InputJsonValue; descri
     clave: "franchise_share_pct_default",
     valor: { value: 50 },
     descripcion: "Participacion default de franquicias sobre el fee",
-  },
-  {
-    clave: "ticket_limits_default",
-    valor: { min: 10, max: 10_000 },
-    descripcion: "Limites globales de ticket salvo rango especifico",
   },
   {
     clave: "odds_thresholds",
@@ -140,7 +136,10 @@ async function seedUsers(franquiciaId: string) {
       role: seedUser.role,
       estado: UserStatus.ACTIVE,
       accessCodeHash,
-      franquiciaId: seedUser.role === UserRole.TRABAJADOR ? franquiciaId : undefined,
+      franquiciaId:
+        seedUser.role === UserRole.TRABAJADOR || seedUser.role === UserRole.MARKET_MAKER
+          ? franquiciaId
+          : undefined,
     };
 
     const existing = await prisma.user.findFirst({

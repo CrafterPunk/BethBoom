@@ -1,4 +1,4 @@
-# BethBoom â Hoja de Arquitectura TÃ©cnica (V1.2 â lista para IA)
+﻿# BethBoom â Hoja de Arquitectura TÃ©cnica (V1.2 â lista para IA)
 
 > Contexto: Web interna para gestionar apuestas en el servidor de GTA V RP. Este documento estÃ¡ optimizado para que una IA lo use como **contexto persistente** durante el desarrollo.
 
@@ -309,12 +309,22 @@
 * **Mercados**: tarjetas muestran badge con tiempo restante; al quedar en cero pasan a "Suspendido" y solo se listan abiertos/suspendidos para visitantes.
 * **Cash - solicitud de cierre**: resumen incluye contadores visuales de tickets y pagos, y mensajes de delta traducidos (enviar a HQ / devolverte / balanceado).
 * **Cash - dashboard**: tarjetas de ventas/pagos del dia usan los nuevos contadores y corrigen el calculo (solo tickets del dia con estado valido).
-* **Pagos**: al liquidar un ticket ganador se calcula comision 5%, se muestra desglose (payout bruto, comision, total a entregar) y el total neto registrado en caja.
+* **Pagos**: al liquidar un ticket ganador se muestra unicamente el payout comprometido y se valida saldo de la caja antes de registrar el egreso (sin retenciones adicionales).
 * **Historial de apuestas**: tickets perdedores aparecen como "Perdido" en rojo; pagados permanecen en verde.
 * **Toast global**: se incluye `ToastProvider` y hook `useToast` para notificaciones reutilizables en cliente.
 * **Build**: se normalizaron archivos `ventas`/layout en UTF-8 + LF, se anadieron `.editorconfig` y `.gitattributes` para forzar codificacion/line endings coherentes y desbloquear el deploy.
 * **Caja - aprobaciones**: el cierre recalcula ventas/pagos netos antes de enviarse; el panel de admin refleja la misma liquidacion y el login ya no exhibe AccessCodes de ejemplo.
 * **Caja - tiempo real**: las sesiones abiertas recalculan ventas/pagos netos en cada carga para reflejar de inmediato las operaciones del cajero.
-* **Mercados vencidos**: al alcanzar la hora de cierre se marcan como suspendidos (badge �Cierre vencido�) hasta que se asigne ganador.
+* **Mercados vencidos**: al alcanzar la hora de cierre se marcan como suspendidos (badge �Cierre vencido�) hasta que se asigne ganador.
 * **Notas de apostadores**: todos los roles pueden registrar notas internas para seguimiento.
 * **Historial de tickets**: nuevos estados visuales indican (1) mercado cerrado pendiente de pago y (2) mercado cerrado perdido; vencidos siguen marcados como perdido.
+## 19) Cambios 2025-10-28
+
+* **Pagos**: la cola publica excluye tickets vencidos, el flujo invalida vencimientos al cerrar mercado y se elimina cualquier comision fija (solo se registra el payout comprometido).
+* **Roles**: se incorpora Market Maker con permisos para crear mercados, gestionar ventas/pagos y pagar tickets sin poder cerrar ni asignar ganadores. Seeds incluyen el access code maker-DDDD3333.
+* **Notas internas**: vendedores y market makers pueden crear notas para apostadores desde la UI (acciones y controles habilitados para todos los roles operativos).
+* **Buscador y historial**: los tickets muestran estados unificados (Pendiente, Ganador pendiente, Cerrado - perdido, Pagado, Perdido, Anulado) tanto en la landing publica como en el detalle del apostador.
+* **Shell**: accesos rapidos visibles al inicio del sidebar y enlace "Mercados publicos" destacado en desktop y mobile.
+* **Landing publica**: redisenada con nuevo gradiente BethBoom, carrusel de promos, estadisticas rapidas, filtros por modalidad y cards con informacion expandible.
+* **Parametros**: se remueve `ticket_limits_default` de la configuracion global para evitar confusion (solo permanecen los parametros activos).
+* **Documentacion**: se aclara que la fecha de vencimiento de tickets se calcula closedAt + 7 dias salvo override manual.

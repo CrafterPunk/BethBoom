@@ -22,6 +22,7 @@ async function getPromotionThreshold() {
 const ROLE_SUBTITLE: Record<UserRole, string> = {
   [UserRole.ADMIN_GENERAL]: "Vista global del negocio.",
   [UserRole.TRABAJADOR]: "Resumen operativo para tu turno.",
+  [UserRole.MARKET_MAKER]: "Gestion de mercados y ventas asignadas.",
   [UserRole.AUDITOR_GENERAL]: "Monitoreo de operaciones y alertas.",
   [UserRole.AUDITOR_FRANQUICIA]: "Actividad de la franquicia asignada.",
 };

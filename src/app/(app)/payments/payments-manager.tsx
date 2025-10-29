@@ -19,8 +19,6 @@ export type PaymentTicket = {
   monto: number;
   cuota: number | null;
   payout: number;
-  fee: number;
-  net: number;
   createdAt: string;
 };
 
@@ -112,9 +110,7 @@ export function PaymentsManager({ data }: PaymentsManagerProps) {
                         ? `Cuota: ${ticket.cuota?.toFixed(2) ?? "--"}`
                         : "Modo POOL"}
                     </div>
-                    <div>Payout bruto: ${formatCurrency(ticket.payout)}</div>
-                    <div>Comision 5%: ${formatCurrency(ticket.fee)}</div>
-                    <div className="font-semibold text-foreground">Total a entregar: ${formatCurrency(ticket.net)}</div>
+                    <div className="font-semibold text-foreground">Payout a entregar: ${formatCurrency(ticket.payout)}</div>
                   </div>
                   <div className="flex justify-end">
                     <Button

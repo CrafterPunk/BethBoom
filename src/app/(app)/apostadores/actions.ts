@@ -309,6 +309,7 @@ export async function addApostadorNoteAction(input: unknown): Promise<ActionResu
     ![
       UserRole.ADMIN_GENERAL,
       UserRole.TRABAJADOR,
+      UserRole.MARKET_MAKER,
       UserRole.AUDITOR_GENERAL,
       UserRole.AUDITOR_FRANQUICIA,
     ].includes(session.role)

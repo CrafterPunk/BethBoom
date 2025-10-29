@@ -64,8 +64,10 @@ export default async function MarketsPage() {
       data={{
         markets: marketsDto,
         franquicias,
-        canManage: session.role === "ADMIN_GENERAL",
-        isOddsVisible: session.role === "ADMIN_GENERAL" || session.role === "TRABAJADOR",
+        canManage: session.role === "ADMIN_GENERAL" || session.role === "MARKET_MAKER",
+        canCloseMarkets: session.role === "ADMIN_GENERAL",
+        isOddsVisible:
+          session.role === "ADMIN_GENERAL" || session.role === "TRABAJADOR" || session.role === "MARKET_MAKER",
       }}
     />
   );
